@@ -174,6 +174,7 @@ function setAuth(token, username) {
   renderUserUI();
   renderSheetsGuest();
   refreshPlazaCard();
+  if (currentModal && currentModal.id === "modalPlaza") refreshPlaza();
 }
 
 function clearAuth() {
@@ -832,6 +833,8 @@ function renderPlazaView() {
   const main = $("#plazaMain");
   const reader = $("#plazaReader");
   const editor = $("#plazaEditor");
+  /* 已登录时锁定视图永远不显示，避免残留 */
+  $("#plazaLock").hidden = isAuthed();
   main.hidden = plaza.state.view !== "list";
   reader.hidden = plaza.state.view !== "read";
   editor.hidden = plaza.state.view !== "editor";

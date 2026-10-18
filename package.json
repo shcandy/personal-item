@@ -1,12 +1,15 @@
 {
   "name": "rhine-terminal",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "description": "苹果简约风模块工具台：随机选择器、云端清单、文章广场",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "test": "node test.mjs && node server.test.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
   },
   "engines": {
     "node": ">=18"

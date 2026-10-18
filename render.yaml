@@ -1,4 +1,5 @@
-# Render 蓝图：连接仓库后 Render 会自动按此配置创建服务
+# Render 蓝图：连接 GitHub 仓库后，Render 会自动创建免费 Node 服务
+# 数据库使用免费的 Neon PostgreSQL（DATABASE_URL 在 Render 控制台填写）
 services:
   - type: web
     name: rhine-terminal
@@ -7,3 +8,6 @@ services:
     buildCommand: npm install
     startCommand: node server.js
     healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        sync: false

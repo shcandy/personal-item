@@ -18,30 +18,101 @@ const PORT = Number(process.env.PORT || 8000);
 const SESSION_TTL = 30 * 24 * 3600 * 1000; // 30 天
 
 /* ---------- 数据层 ---------- */
-let db = { users: [], sheets: [], articles: [], sessions: [], invites: [], comments: [] };
+const DATABASE_URL = process.env.DATABASE_URL || "";
+const STORE_ID = "rhein-terminal";
+let pgPool = null;
+let writeChain = Promise.resolve();
+
+const emptyDb = () => ({ users: [], sheets: [], articles: [], sessions: [], invites: [], comments: [] });
+
+function normalizeDb(raw) {
+  return {
+    users: Array.isArray(raw.users) ? raw.users : [],
+    sheets: Array.isArray(raw.sheets) ? raw.sheets : [],
+    articles: Array.isArray(raw.articles) ? raw.articles : [],
+    sessions: Array.isArray(raw.sessions) ? raw.sessions : [],
+    invites: Array.isArray(raw.invites) ? raw.invites : [],
+    comments: Array.isArray(raw.comments) ? raw.comments : []
+  };
+}
+
+let db = emptyDb();
+
+/* 本地模式：从 data/db.json 读；云端模式（DATABASE_URL）：从 Postgres 读 */
+async function initStore() {
+  if (!DATABASE_URL) {
+    loadDb();
+    return;
+  }
+  const { Pool } = require("pg");
+  pgPool = new Pool({
+    connectionString: DATABASE_URL,
+    ssl: DATABASE_URL.includes("sslmode=disable") ? false : { rejectUnauthorized: false },
+    max: 3
+  });
+  await pgPool.query(`create table if not exists app_state (
+    id text primary key,
+    data jsonb not null,
+    updated_at timestamptz not null default now()
+  )`);
+  const r = await pgPool.query("select data from app_state where id = $1", [STORE_ID]);
+  if (r.rows.length) {
+    db = normalizeDb(r.rows[0].data);
+  } else {
+    db = emptyDb();
+    await saveDb();
+  }
+  console.log("云端数据库已连接（PostgreSQL）");
+}
 
 function loadDb() {
   try {
-    const raw = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
-    /* 旧数据兼容：缺失的集合补为空数组 */
-    db = {
-      users: Array.isArray(raw.users) ? raw.users : [],
-      sheets: Array.isArray(raw.sheets) ? raw.sheets : [],
-      articles: Array.isArray(raw.articles) ? raw.articles : [],
-      sessions: Array.isArray(raw.sessions) ? raw.sessions : [],
-      invites: Array.isArray(raw.invites) ? raw.invites : [],
-      comments: Array.isArray(raw.comments) ? raw.comments : []
-    };
+    db = normalizeDb(JSON.parse(fs.readFileSync(DB_PATH, "utf8")));
   } catch {
-    db = { users: [], sheets: [], articles: [], sessions: [], invites: [], comments: [] };
+    db = emptyDb();
   }
 }
 
 function saveDb() {
+  if (pgPool) {
+    /* 串行写入快照，避免并发请求互相覆盖 */
+    const snapshot = JSON.stringify(db);
+    writeChain = writeChain
+      .then(() =>
+        pgPool.query(
+          `insert into app_state (id, data, updated_at) values ($1, $2::jsonb, now())
+           on conflict (id) do update set data = excluded.data, updated_at = now()`,
+          [STORE_ID, snapshot]
+        )
+      )
+      .catch((e) => console.error("[db] 云端保存失败:", e.message));
+    return writeChain;
+  }
+  /* 本地模式：保存前先从磁盘同步邀请码（多进程共用数据文件时防丢码） */
+  syncInvitesFromDisk();
   fs.mkdirSync(DATA_DIR, { recursive: true });
   const tmp = DB_PATH + ".tmp";
   fs.writeFileSync(tmp, JSON.stringify(db));
   fs.renameSync(tmp, DB_PATH);
+  return Promise.resolve();
+}
+
+/* 把磁盘上新增/已使用的邀请码合并进内存（多进程共用同一数据文件的场景） */
+function syncInvitesFromDisk() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
+    const disk = Array.isArray(raw.invites) ? raw.invites : [];
+    const byCode = new Map(db.invites.map((i) => [i.code, i]));
+    for (const di of disk) {
+      const mem = byCode.get(di.code);
+      if (!mem) {
+        db.invites.push(di);
+      } else if (di.usedBy && !mem.usedBy) {
+        mem.usedBy = di.usedBy;
+        mem.usedAt = di.usedAt;
+      }
+    }
+  } catch (e) { /* 数据文件暂不可读时忽略 */ }
 }
 
 const newId = () => crypto.randomBytes(16).toString("hex");
@@ -188,9 +259,11 @@ routes["POST api/register"] = async (req, res) => {
   if (password.length < 6 || password.length > 72) return json(res, 400, { error: "密码长度需为 6–72 位" });
   if (db.users.some((u) => u.username === username)) return json(res, 409, { error: "用户名已被占用" });
   /* 邀请制：注册必须携带有效且未使用的一次性邀请码 */
+  syncInvitesFromDisk(); // 运行期间圈主新生成的邀请码立即生效
   const code = normalizeInviteCode(body.inviteCode);
   if (!code) return json(res, 400, { error: "请填写邀请码（向圈主索取）" });
-  const invite = db.invites.find((x) => x.code === code);
+  /* 存储的码可能带连字符（如 9T4K-AX8G），比对时两侧都规范化 */
+  const invite = db.invites.find((x) => normalizeInviteCode(x.code) === code);
   if (!invite || invite.usedBy) return json(res, 403, { error: "邀请码无效或已被使用" });
   const salt = crypto.randomBytes(16).toString("hex");
   const user = { id: newId(), username, salt, hash: hashPassword(password, salt), createdAt: Date.now() };
@@ -464,46 +537,65 @@ function serveStatic(req, res, pathname) {
 }
 
 /* ---------- 主服务 ---------- */
-loadDb();
-
-/* 圈主命令行工具（不启动服务，执行后退出） */
 const cliArgs = process.argv.slice(2);
-if (cliArgs[0] === "--invite") {
-  const n = Math.max(1, Math.min(200, parseInt(cliArgs[1], 10) || 3));
-  const codes = [];
-  for (let i = 0; i < n; i++) {
-    const code = generateInviteCode();
-    db.invites.push({ code, usedBy: null, usedAt: null, createdAt: Date.now() });
-    codes.push(code);
-  }
-  saveDb();
-  console.log("已生成 " + n + " 个一次性邀请码（每个只能注册一个账号）：");
-  codes.forEach((c) => console.log("  " + c));
-  process.exit(0);
-}
-if (cliArgs[0] === "--users") {
-  if (!db.users.length) {
-    console.log("还没有注册用户。");
-  } else {
-    console.log("注册用户（" + db.users.length + " 人）：");
-    db.users.forEach((u) =>
-      console.log("  " + u.username + "\t" + new Date(u.createdAt).toLocaleString("zh-CN"))
-    );
-  }
-  const unused = db.invites.filter((i) => !i.usedBy).length;
-  console.log("剩余可用邀请码：" + unused + " 个");
-  process.exit(0);
-}
 
-const server = http.createServer((req, res) => {
-  const url = new URL(req.url, "http://localhost");
-  if (url.pathname.startsWith("/api/")) return handleApi(req, res, url);
-  serveStatic(req, res, url.pathname);
-});
+(async () => {
+  await initStore();
 
-server.listen(PORT, () => {
-  console.log("RHEIN TERMINAL 已启动");
-  console.log("  本机访问:   http://localhost:" + PORT);
-  console.log("  局域网分享: http://<本机IP>:" + PORT + "   (node server.js)");
-  console.log("  数据目录:   " + DATA_DIR);
-});
+  /* 圈主命令行工具（不启动服务，执行后退出） */
+  if (cliArgs[0] === "--invite") {
+    const n = Math.max(1, Math.min(200, parseInt(cliArgs[1], 10) || 3));
+    const codes = [];
+    for (let i = 0; i < n; i++) {
+      const code = generateInviteCode();
+      db.invites.push({ code, usedBy: null, usedAt: null, createdAt: Date.now() });
+      codes.push(code);
+    }
+    await saveDb();
+    console.log("已生成 " + n + " 个一次性邀请码（每个只能注册一个账号）：");
+    codes.forEach((c) => console.log("  " + c));
+    process.exit(0);
+  }
+  if (cliArgs[0] === "--users") {
+    if (!db.users.length) {
+      console.log("还没有注册用户。");
+    } else {
+      console.log("注册用户（" + db.users.length + " 人）：");
+      db.users.forEach((u) =>
+        console.log("  " + u.username + "\t" + new Date(u.createdAt).toLocaleString("zh-CN"))
+      );
+    }
+    const unused = db.invites.filter((i) => !i.usedBy).length;
+    console.log("剩余可用邀请码：" + unused + " 个");
+    process.exit(0);
+  }
+
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url, "http://localhost");
+    if (url.pathname.startsWith("/api/")) return handleApi(req, res, url);
+    serveStatic(req, res, url.pathname);
+  });
+
+  server.on("error", (e) => {
+    if (e.code === "EADDRINUSE") {
+      console.error("启动失败：端口 " + PORT + " 已被占用。请先关闭旧的服务器窗口，或运行 taskkill /f /im node.exe 后重试。");
+      process.exit(1);
+    }
+    console.error("服务器错误:", e.message);
+    process.exit(1);
+  });
+
+  server.listen(PORT, () => {
+    console.log("RHEIN TERMINAL 已启动");
+    console.log("  本机访问:   http://localhost:" + PORT);
+    console.log("  数据:       " + (pgPool ? "云端 PostgreSQL" : DATA_DIR));
+  });
+
+  /* 云端部署：收到停止信号前把未写完的数据刷到数据库 */
+  const flush = async () => {
+    try { await writeChain; } catch (e) { /* 忽略 */ }
+    process.exit(0);
+  };
+  process.on("SIGTERM", flush);
+  process.on("SIGINT", flush);
+})();
