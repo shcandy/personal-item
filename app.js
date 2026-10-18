@@ -1,6 +1,7 @@
 /* ============================================================
    RHEIN TERMINAL · app.js
-   模块化决策终端 —— 交互逻辑
+   模块工具台 —— 交互逻辑（苹果简约风）
+   认证 / 云端清单 / 随机选择器 / 文章广场 / 其他模块
    ============================================================ */
 "use strict";
 
@@ -18,12 +19,10 @@ const store = {
     }
   },
   set(key, value) {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch (e) { /* 隐私模式等场景下静默失败 */ }
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* 静默 */ }
   },
   remove(key) {
-    try { localStorage.removeItem(key); } catch (e) { /* ignore */ }
+    try { localStorage.removeItem(key); } catch (e) { /* 静默 */ }
   }
 };
 
@@ -39,6 +38,23 @@ const todayKey = () => {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
 
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function timeAgo(ts) {
+  const diff = Date.now() - ts;
+  if (diff < 60000) return "刚刚";
+  if (diff < 3600000) return Math.floor(diff / 60000) + " 分钟前";
+  if (diff < 86400000) return Math.floor(diff / 3600000) + " 小时前";
+  const d = new Date(ts);
+  return `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())}`;
+}
+
 function toast(message, kind = "") {
   const root = $("#toastRoot");
   const el = document.createElement("div");
@@ -47,11 +63,11 @@ function toast(message, kind = "") {
   root.appendChild(el);
   setTimeout(() => {
     el.classList.add("leaving");
-    setTimeout(() => el.remove(), 260);
+    setTimeout(() => el.remove(), 240);
   }, 2600);
 }
 
-/* 当日计数（带日期戳的简单计数器） */
+/* 当日计数 */
 function todayCount(key) {
   const rec = store.get(key, { date: "", n: 0 });
   if (rec.date !== todayKey()) return { date: todayKey(), n: 0 };
@@ -64,7 +80,29 @@ function bumpToday(key) {
   return rec.n;
 }
 
-/* ---------- 音频提示 ---------- */
+/* 两步确认按钮 */
+function armButton(btn, label, action) {
+  if (btn.dataset.armed === "1") {
+    delete btn.dataset.armed;
+    btn.classList.remove("confirming");
+    btn.textContent = btn.dataset.original || btn.textContent;
+    action();
+    return;
+  }
+  btn.dataset.original = btn.textContent;
+  btn.dataset.armed = "1";
+  btn.classList.add("confirming");
+  btn.textContent = label;
+  setTimeout(() => {
+    if (btn.dataset.armed === "1") {
+      delete btn.dataset.armed;
+      btn.classList.remove("confirming");
+      btn.textContent = btn.dataset.original || btn.textContent;
+    }
+  }, 3000);
+}
+
+/* 音频提示 */
 let audioCtx = null;
 function beep() {
   try {
@@ -87,6 +125,92 @@ function beep() {
       osc.stop(at + 0.22);
     });
   } catch (e) { /* 无音频设备时静默 */ }
+}
+
+/* ============================================================
+   认证与 API
+   ============================================================ */
+const auth = {
+  token: store.get("rhine.auth", { token: "", username: "" }).token || "",
+  username: store.get("rhine.auth", { token: "", username: "" }).username || ""
+};
+let serverOnline = true;
+let authReturnTo = null; // 登录成功后的返回目标（模块名）
+
+function isAuthed() { return Boolean(auth.token); }
+
+async function api(path, { method = "GET", body } = {}) {
+  const opts = {
+    method,
+    headers: { "Content-Type": "application/json" }
+  };
+  if (auth.token) opts.headers.Authorization = "Bearer " + auth.token;
+  if (body !== undefined) opts.body = JSON.stringify(body);
+  let res;
+  try {
+    res = await fetch(path, opts);
+  } catch (e) {
+    throw new Error("无法连接服务器，请确认已运行 node server.js");
+  }
+  let data = null;
+  try { data = await res.json(); } catch (e) { /* 无 JSON 体 */ }
+  if (res.status === 401 && auth.token) {
+    // 会话过期
+    clearAuth();
+    toast("登录已过期，请重新登录", "err");
+  }
+  if (!res.ok) {
+    const err = new Error((data && data.error) || "HTTP " + res.status);
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
+function setAuth(token, username) {
+  auth.token = token;
+  auth.username = username;
+  store.set("rhine.auth", { token, username });
+  renderUserUI();
+  renderSheetsGuest();
+  refreshPlazaCard();
+}
+
+function clearAuth() {
+  auth.token = "";
+  auth.username = "";
+  store.set("rhine.auth", { token: "", username: "" });
+  sheets.state.list = [];
+  sheets.state.activeId = null;
+  sheets.state.items = [];
+  renderUserUI();
+  renderSheetsGuest();
+  refreshPlazaCard();
+  if (currentModal && currentModal.id === "modalPlaza") refreshPlaza();
+}
+
+function renderUserUI() {
+  const logged = isAuthed();
+  $("#avatar").textContent = logged ? auth.username.slice(0, 1).toUpperCase() : "访";
+  $("#userName").textContent = logged ? auth.username : "登录";
+  $("#popAvatar").textContent = logged ? auth.username.slice(0, 1).toUpperCase() : "访";
+  $("#popName").textContent = logged ? auth.username : "未登录";
+  $("#popSub").textContent = logged ? "清单与文章已同步至该账号" : "登录后可同步清单与文章";
+}
+
+async function checkHealth() {
+  try {
+    await api("/api/health");
+    serverOnline = true;
+    const chip = $("#serverChip");
+    chip.textContent = "● 在线服务";
+    chip.classList.add("online");
+  } catch (e) {
+    serverOnline = false;
+    const chip = $("#serverChip");
+    chip.textContent = "● 本地模式";
+    chip.classList.remove("online");
+  }
 }
 
 /* ============================================================
@@ -122,31 +246,33 @@ const FOOD_PRESETS = [
 
 const CATS = [
   { id: "all", label: "全部" },
-  { id: "rice", label: "饭 · RICE" },
-  { id: "noodle", label: "面 · NOODLE" },
-  { id: "light", label: "轻食 · LIGHT" },
-  { id: "pot", label: "汤锅 · POT" },
-  { id: "snack", label: "小食 · SNACK" }
+  { id: "rice", label: "饭" },
+  { id: "noodle", label: "面" },
+  { id: "light", label: "轻食" },
+  { id: "pot", label: "汤锅" },
+  { id: "snack", label: "小食" }
 ];
 
 const picker = {
   tab: "preset",
   catFilter: "all",
   qty: 1,
-  noRepeat: true,   // true = 去重
-  consume: false,   // true = 抽取后从池中移除
+  noRepeat: true,
+  consume: false,
   running: false
 };
 
 let presetSel = new Set(store.get("rhine.presetSel", null) || FOOD_PRESETS.map((f) => f.name));
-let customPool = store.get("rhine.customPool", []);
-let customSel = new Set(store.get("rhine.customSel", null) || customPool);
+let tempItems = store.get("rhine.tempItems", []);
 let history = store.get("rhine.history", []);
+
+const sheets = {
+  state: { list: [], activeId: null, items: [] }
+};
 
 function persistPools() {
   store.set("rhine.presetSel", Array.from(presetSel));
-  store.set("rhine.customPool", customPool);
-  store.set("rhine.customSel", Array.from(customSel));
+  store.set("rhine.tempItems", tempItems);
   store.set("rhine.history", history);
 }
 
@@ -177,9 +303,7 @@ function renderPresetPool() {
   list.forEach((f) => {
     const btn = document.createElement("button");
     btn.className = "item-chip" + (presetSel.has(f.name) ? " on" : "");
-    btn.innerHTML =
-      `<span class="tick">✓</span><span class="chip-name">${escapeHtml(f.name)}</span>`;
-    btn.title = "点击选中 / 取消选中";
+    btn.innerHTML = `<span class="tick">✓</span><span class="chip-name">${escapeHtml(f.name)}</span>`;
     btn.addEventListener("click", () => {
       if (presetSel.has(f.name)) presetSel.delete(f.name);
       else presetSel.add(f.name);
@@ -194,136 +318,158 @@ function renderPresetPool() {
   $("#presetCount").textContent = `已选 ${shown} / ${list.length}`;
 }
 
-/* —— 渲染：导入池 —— */
+/* —— 渲染：临时导入池（不可一键清空，仅支持逐项移除） —— */
 function renderImportPool() {
   const wrap = $("#importPool");
   wrap.innerHTML = "";
-  if (!customPool.length) {
+  if (!tempItems.length) {
     const empty = document.createElement("div");
     empty.className = "empty-note";
     empty.textContent = "暂无导入项 —— 通过上方拖放或粘贴载入名单。";
     wrap.appendChild(empty);
   }
-  customPool.forEach((name, i) => {
+  tempItems.forEach((name, i) => {
     const btn = document.createElement("button");
-    btn.className = "item-chip" + (customSel.has(name) ? " on" : "");
+    btn.className = "item-chip";
     btn.innerHTML =
       `<span class="tick">✓</span><span class="chip-name">${escapeHtml(name)}</span>
-       <span class="del" title="从名单移除">✕</span>`;
+       <span class="del" title="移除这一项">✕</span>`;
     btn.addEventListener("click", (e) => {
       if (e.target.classList.contains("del")) {
-        customPool.splice(i, 1);
-        customSel.delete(name);
+        tempItems.splice(i, 1);
         persistPools();
         renderImportPool();
         refreshPoolUI();
-        updateImportStatus(`已移除「${name}」`);
+        updateImportStatus(`当前名单 ${tempItems.length} 项 · 已移除「${name}」`);
         return;
       }
-      if (customSel.has(name)) customSel.delete(name);
-      else customSel.add(name);
-      persistPools();
-      renderImportPool();
-      refreshPoolUI();
     });
     wrap.appendChild(btn);
   });
-  $("#importCount").textContent = `已选 ${customSel.size} / ${customPool.length}`;
-}
-
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-/* —— 导入解析 —— */
-function pickColumn(header) {
-  if (header.length === 1) return 0;
-  const hit = header.findIndex((h) =>
-    /名称|名字|食物|选项|内容|姓名|item|name|title|value/i.test(h)
-  );
-  return hit >= 0 ? hit : 0;
-}
-
-function parseCustomText(text) {
-  const t = String(text || "").replace(/^\uFEFF/, "").replace(/\r/g, "").trim();
-  if (!t) return [];
-
-  /* 尝试 JSON：数组，或含 items/options/data/list 的对象 */
-  if (/^[\[{]/.test(t)) {
-    try {
-      const obj = JSON.parse(t);
-      const arr = Array.isArray(obj)
-        ? obj
-        : obj.items || obj.options || obj.data || obj.list || obj.名单 || obj.values;
-      if (Array.isArray(arr)) {
-        return arr
-          .map((x) =>
-            typeof x === "string" ? x
-            : x && (x.name || x.title || x.label || x.text || x.食物 || x.选项 || x.value || "")
-          )
-          .map((s) => String(s).trim())
-          .filter(Boolean);
-      }
-    } catch (e) { /* 不是合法 JSON，继续按文本解析 */ }
-  }
-
-  const lines = t.split(/\n+/).map((l) => l.trim()).filter(Boolean);
-  if (!lines.length) return [];
-
-  /* CSV 探测：首行含逗号，且后续行也普遍含逗号 */
-  const commas = lines.map((l) => (l.match(/[,，]/g) || []).length);
-  const csvLike =
-    lines.length >= 2 &&
-    commas[0] > 0 &&
-    commas.slice(1).filter((c) => c > 0).length >= Math.min(3, lines.length - 1);
-
-  if (csvLike) {
-    const header = lines[0].split(/[,，]/).map((h) => h.trim());
-    const colIdx = pickColumn(header);
-    return lines
-      .slice(1)
-      .map((row) => row.split(/[,，]/)[colIdx])
-      .map((s) => (s || "").trim())
-      .filter((s) => s && !/^["']$/.test(s));
-  }
-
-  /* 纯文本：去项目符号、编号 */
-  return lines
-    .filter((l) => !/^[#;]/.test(l))
-    .map((l) => l.replace(/^[\s]*[-*•·—\d.)、]+[\s]*/, "").trim())
-    .filter((l) => l && !/^(名称|名字|选项|内容|食物|姓名|name|item|title)$/i.test(l));
-}
-
-function loadCustom(items, sourceLabel) {
-  const clean = Array.from(new Set(items.map((s) => s.trim()).filter(Boolean)));
-  if (!clean.length) {
-    toast("未解析到有效选项，请检查格式。", "err");
-    return false;
-  }
-  customPool = clean.slice();
-  customSel = new Set(clean);
-  persistPools();
-  renderImportPool();
-  refreshPoolUI();
-  updateImportStatus(`已载入 ${clean.length} 项 · 来源：${sourceLabel}`);
-  toast(`名单载入完成：${clean.length} 项`, "ok");
-  return true;
+  $("#importCount").textContent = `名单 ${tempItems.length} 项`;
 }
 
 function updateImportStatus(text) {
   $("#importStatus").textContent = `当前名单：${text}`;
 }
 
-/* —— 当前活动池 —— */
+/* —— 云端清单 —— */
+async function loadSheets() {
+  if (!isAuthed()) return;
+  try {
+    const data = await api("/api/sheets");
+    sheets.state.list = data.sheets;
+    if (sheets.state.activeId && !sheets.state.list.some((s) => s.id === sheets.state.activeId)) {
+      sheets.state.activeId = null;
+      sheets.state.items = [];
+    }
+    renderSheetTabs();
+    if (sheets.state.activeId) await selectSheet(sheets.state.activeId, true);
+    else renderSheetPool();
+  } catch (e) {
+    toast(e.message, "err");
+  }
+}
+
+function renderSheetTabs() {
+  const wrap = $("#sheetTabs");
+  wrap.innerHTML = "";
+  if (!sheets.state.list.length) {
+    const empty = document.createElement("span");
+    empty.className = "pool-count mono";
+    empty.textContent = "还没有清单，点击「＋ 新建」创建一个";
+    wrap.appendChild(empty);
+    return;
+  }
+  sheets.state.list.forEach((s) => {
+    const b = document.createElement("button");
+    b.className = "sheet-tab" + (s.id === sheets.state.activeId ? " active" : "");
+    b.innerHTML = `${escapeHtml(s.name)}<span class="count">${s.count}</span>`;
+    b.addEventListener("click", () => selectSheet(s.id));
+    wrap.appendChild(b);
+  });
+}
+
+async function selectSheet(id, keepItems) {
+  sheets.state.activeId = id;
+  try {
+    const data = await api("/api/sheets/" + id);
+    sheets.state.items = data.items;
+    renderSheetTabs();
+    renderSheetPool();
+    refreshPoolUI();
+  } catch (e) {
+    toast(e.message, "err");
+  }
+}
+
+function renderSheetPool() {
+  const wrap = $("#sheetPool");
+  wrap.innerHTML = "";
+  const items = sheets.state.items;
+  if (!sheets.state.activeId) {
+    const empty = document.createElement("div");
+    empty.className = "empty-note";
+    empty.textContent = "选择一个清单后，这里会显示其中的选项。";
+    wrap.appendChild(empty);
+    $("#sheetCount").textContent = "未选择清单";
+    return;
+  }
+  if (!items.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-note";
+    empty.textContent = "这个清单还是空的，在下方输入框添加选项。";
+    wrap.appendChild(empty);
+  }
+  items.forEach((name, i) => {
+    const btn = document.createElement("button");
+    btn.className = "item-chip";
+    btn.innerHTML =
+      `<span class="tick">✓</span><span class="chip-name">${escapeHtml(name)}</span>
+       <span class="del" title="从清单移除">✕</span>`;
+    btn.addEventListener("click", async (e) => {
+      if (!e.target.classList.contains("del")) return;
+      const next = items.filter((x, idx) => idx !== i);
+      try {
+        await api("/api/sheets/" + sheets.state.activeId, { method: "PUT", body: { items: next } });
+        sheets.state.items = next;
+        const s = sheets.state.list.find((x) => x.id === sheets.state.activeId);
+        if (s) s.count = next.length;
+        renderSheetPool();
+        renderSheetTabs();
+        refreshPoolUI();
+      } catch (err) {
+        toast(err.message, "err");
+      }
+    });
+    wrap.appendChild(btn);
+  });
+  const s = sheets.state.list.find((x) => x.id === sheets.state.activeId);
+  $("#sheetCount").textContent = `清单「${s ? s.name : ""}」 · ${items.length} 项`;
+}
+
+function renderSheetsGuest() {
+  const guest = $("#sheetsGuest");
+  const main = $("#sheetsMain");
+  if (isAuthed()) {
+    guest.hidden = true;
+    main.hidden = false;
+    loadSheets();
+  } else {
+    guest.hidden = false;
+    main.hidden = true;
+  }
+}
+
+/* —— 活动池 —— */
 function activePool() {
   if (picker.tab === "preset") {
     return FOOD_PRESETS.filter((f) => presetSel.has(f.name)).map((f) => f.name);
   }
-  return customPool.filter((n) => customSel.has(n));
+  if (picker.tab === "sheets") {
+    return sheets.state.items.slice();
+  }
+  return tempItems.slice();
 }
 
 function refreshPoolUI() {
@@ -374,7 +520,6 @@ async function executeDraw() {
   grid.appendChild(reel);
   stage.scrollIntoView({ behavior: "smooth", block: "nearest" });
 
-  /* 滚轮动画：逐渐减速 */
   const totalMs = 900;
   const start = performance.now();
   await new Promise((resolve) => {
@@ -384,15 +529,12 @@ async function executeDraw() {
       if (p < 1) {
         const wait = 45 + 190 * p * p;
         setTimeout(() => requestAnimationFrame(step), wait);
-      } else {
-        resolve();
-      }
+      } else resolve();
     };
     requestAnimationFrame(step);
   });
   await delay(120);
 
-  /* 渲染结果 */
   grid.innerHTML = "";
   items.forEach((name, i) => {
     const card = document.createElement("div");
@@ -400,24 +542,36 @@ async function executeDraw() {
     card.innerHTML =
       `<div class="r-idx">NO.${pad2(i + 1)}</div>
        <div class="r-name">${escapeHtml(name)}</div>
-       <div class="r-tag">RHEIN PICK</div>
-       <div class="r-stamp">VERIFIED</div>`;
+       <div class="r-tag">RHEIN PICK</div>`;
     grid.appendChild(card);
   });
 
-  /* 消耗：从池中移除 */
+  /* 消耗：从来源池移除 */
   if (picker.consume) {
-    items.forEach((name) => {
-      presetSel.delete(name);
-      customSel.delete(name);
-      customPool = customPool.filter((n) => n !== name);
-    });
-    persistPools();
-    renderPresetPool();
-    renderImportPool();
+    if (picker.tab === "preset") {
+      items.forEach((name) => presetSel.delete(name));
+      persistPools();
+      renderPresetPool();
+    } else if (picker.tab === "sheets") {
+      const next = sheets.state.items.filter((x) => !items.includes(x));
+      try {
+        await api("/api/sheets/" + sheets.state.activeId, { method: "PUT", body: { items: next } });
+        sheets.state.items = next;
+        const s = sheets.state.list.find((x) => x.id === sheets.state.activeId);
+        if (s) s.count = next.length;
+        renderSheetPool();
+        renderSheetTabs();
+      } catch (e) {
+        toast(e.message, "err");
+      }
+    } else {
+      tempItems = tempItems.filter((x) => !items.includes(x));
+      persistPools();
+      renderImportPool();
+      updateImportStatus(`当前名单 ${tempItems.length} 项 · 已消耗 ${items.length} 项`);
+    }
   }
 
-  /* 记录 */
   history.unshift({ t: Date.now(), items: items.slice() });
   history = history.slice(0, 12);
   persistPools();
@@ -474,6 +628,212 @@ function renderPreviewChips() {
   $("#previewCount").textContent = names.length;
 }
 
+/* —— 导入解析 —— */
+function pickColumn(header) {
+  if (header.length === 1) return 0;
+  const hit = header.findIndex((h) =>
+    /名称|名字|食物|选项|内容|姓名|item|name|title|value/i.test(h)
+  );
+  return hit >= 0 ? hit : 0;
+}
+
+function parseCustomText(text) {
+  const t = String(text || "").replace(/^\uFEFF/, "").replace(/\r/g, "").trim();
+  if (!t) return [];
+
+  if (/^[\[{]/.test(t)) {
+    try {
+      const obj = JSON.parse(t);
+      const arr = Array.isArray(obj)
+        ? obj
+        : obj.items || obj.options || obj.data || obj.list || obj.名单 || obj.values;
+      if (Array.isArray(arr)) {
+        return arr
+          .map((x) =>
+            typeof x === "string" ? x
+            : x && (x.name || x.title || x.label || x.text || x.食物 || x.选项 || x.value || "")
+          )
+          .map((s) => String(s).trim())
+          .filter(Boolean);
+      }
+    } catch (e) { /* 继续按文本解析 */ }
+  }
+
+  const lines = t.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return [];
+
+  const commas = lines.map((l) => (l.match(/[,，]/g) || []).length);
+  const csvLike =
+    lines.length >= 2 &&
+    commas[0] > 0 &&
+    commas.slice(1).filter((c) => c > 0).length >= Math.min(3, lines.length - 1);
+
+  if (csvLike) {
+    const header = lines[0].split(/[,，]/).map((h) => h.trim());
+    const colIdx = pickColumn(header);
+    return lines
+      .slice(1)
+      .map((row) => row.split(/[,，]/)[colIdx])
+      .map((s) => (s || "").trim())
+      .filter((s) => s && !/^["']$/.test(s));
+  }
+
+  return lines
+    .filter((l) => !/^[#;]/.test(l))
+    .map((l) => l.replace(/^[\s]*[-*•·—\d.)、]+[\s]*/, "").trim())
+    .filter((l) => l && !/^(名称|名字|选项|内容|食物|姓名|name|item|title)$/i.test(l));
+}
+
+function loadCustom(items, sourceLabel) {
+  const clean = Array.from(new Set(items.map((s) => s.trim()).filter(Boolean)));
+  if (!clean.length) {
+    toast("未解析到有效选项，请检查格式。", "err");
+    return false;
+  }
+  tempItems = clean.slice();
+  persistPools();
+  renderImportPool();
+  refreshPoolUI();
+  updateImportStatus(`${clean.length} 项 · 来源：${sourceLabel} · 仅支持逐项移除`);
+  toast(`名单载入完成：${clean.length} 项`, "ok");
+  return true;
+}
+
+/* ============================================================
+   M-06 文章广场
+   ============================================================ */
+const plaza = {
+  state: { list: [], filter: "all", view: "list", current: null, editingId: null }
+};
+
+async function loadArticles() {
+  if (!isAuthed()) return;
+  try {
+    const data = await api("/api/articles");
+    plaza.state.list = data.articles;
+    renderPlazaList();
+    refreshPlazaCard();
+  } catch (e) {
+    toast(e.message, "err");
+  }
+}
+
+function renderPlazaList() {
+  const listEl = $("#plazaList");
+  const empty = $("#plazaEmpty");
+  listEl.innerHTML = "";
+  const mine = plaza.state.filter === "mine";
+  const rows = plaza.state.list.filter((a) => (mine ? a.username === auth.username : true));
+  empty.hidden = rows.length > 0;
+  rows.forEach((a) => {
+    const row = document.createElement("button");
+    row.className = "article-row";
+    row.innerHTML =
+      `<div class="a-title">${escapeHtml(a.title)}</div>
+       <div class="a-meta">
+         <span class="badge ${a.isPublic ? "public" : "private"}">${a.isPublic ? "公开" : "私密"}</span>
+         <span>${escapeHtml(a.username)}</span>
+         <span>${timeAgo(a.updatedAt)}</span>
+       </div>
+       <div class="a-excerpt">${escapeHtml(a.excerpt || "")}</div>`;
+    row.addEventListener("click", () => openArticle(a.id));
+    listEl.appendChild(row);
+  });
+}
+
+async function openArticle(id) {
+  try {
+    const data = await api("/api/articles/" + id);
+    plaza.state.current = data.article;
+    plaza.state.view = "read";
+    renderPlazaView();
+  } catch (e) {
+    toast(e.message, "err");
+  }
+}
+
+function renderPlazaView() {
+  const main = $("#plazaMain");
+  const reader = $("#plazaReader");
+  const editor = $("#plazaEditor");
+  main.hidden = plaza.state.view !== "list";
+  reader.hidden = plaza.state.view !== "read";
+  editor.hidden = plaza.state.view !== "editor";
+  if (plaza.state.view === "read" && plaza.state.current) {
+    const a = plaza.state.current;
+    $("#readerTitle").textContent = a.title;
+    $("#readerMeta").textContent =
+      `${a.isPublic ? "公开" : "私密"} · ${a.username} · ${timeAgo(a.updatedAt)} · ${a.content.length} 字`;
+    $("#readerBody").textContent = a.content;
+    $("#readerActions").hidden = a.username !== auth.username;
+  }
+}
+
+function openEditor(article) {
+  plaza.state.view = "editor";
+  plaza.state.editingId = article ? article.id : null;
+  $("#editorTitle").value = article ? article.title : "";
+  $("#editorContent").value = article ? article.content : "";
+  setEditorPublic(article ? article.isPublic : false);
+  $("#editorStatus").textContent = "";
+  renderPlazaView();
+  $("#editorTitle").focus();
+}
+
+function setEditorPublic(on) {
+  const sw = $("#editorPublic");
+  sw.setAttribute("aria-checked", on ? "true" : "false");
+  $("#editorPublicLabel").textContent = on ? "所有人可见" : "仅自己可见";
+}
+
+async function saveArticle() {
+  const title = $("#editorTitle").value.trim();
+  const content = $("#editorContent").value;
+  const isPublic = $("#editorPublic").getAttribute("aria-checked") === "true";
+  if (!title) { toast("请填写标题", "err"); return; }
+  if (!content.trim()) { toast("正文不能为空", "err"); return; }
+  try {
+    if (plaza.state.editingId) {
+      await api("/api/articles/" + plaza.state.editingId, { method: "PUT", body: { title, content, isPublic } });
+      toast("文章已更新", "ok");
+    } else {
+      await api("/api/articles", { method: "POST", body: { title, content, isPublic } });
+      toast(isPublic ? "文章已发布（公开）" : "文章已保存（仅自己可见）", "ok");
+    }
+    await loadArticles();
+    plaza.state.view = "list";
+    renderPlazaView();
+  } catch (e) {
+    toast(e.message, "err");
+  }
+}
+
+function refreshPlaza() {
+  if (isAuthed()) {
+    $("#plazaLock").hidden = true;
+    $("#plazaMain").hidden = plaza.state.view !== "list";
+    $("#plazaReader").hidden = plaza.state.view !== "read";
+    $("#plazaEditor").hidden = plaza.state.view !== "editor";
+    plaza.state.view = "list";
+    loadArticles();
+  } else {
+    $("#plazaLock").hidden = false;
+    $("#plazaMain").hidden = true;
+    $("#plazaReader").hidden = true;
+    $("#plazaEditor").hidden = true;
+  }
+}
+
+function refreshPlazaCard() {
+  if (isAuthed()) {
+    $("#plazaPreview").textContent = "写下你的文字，公开或只留给自己。";
+    $("#plazaPreviewCount").textContent = `已登录 · ${plaza.state.list.length} 篇可见文章`;
+  } else {
+    $("#plazaPreview").textContent = "登录后即可阅读与写作";
+    $("#plazaPreviewCount").textContent = "未登录 · 全部私密";
+  }
+}
+
 /* ============================================================
    M-02 专注计时
    ============================================================ */
@@ -488,7 +848,6 @@ function renderFocus() {
   $("#focusBar").style.width =
     (focus.total ? (Math.max(0, focus.left) / focus.total) * 100 : 0) + "%";
   $("#focusToggle").textContent = focus.running ? "暂停" : focus.left === focus.total ? "开始专注" : "继续";
-  /* 卡片预览 */
   $("#focusPreview").textContent = fmtMMSS(Math.max(0, focus.left));
   $("#focusPreviewBar").style.width =
     (focus.total ? (Math.max(0, focus.left) / focus.total) * 100 : 0) + "%";
@@ -611,13 +970,11 @@ function renderClock() {
   const dateFull = `${dateStr} 周${week}`;
   $("#clockPreviewDate").textContent = dateFull;
   $("#modalClockDate").textContent = dateFull;
-  /* 当日进度 */
   const start = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const pct = Math.min(100, Math.max(0, ((Date.now() - start) / 86400000) * 100));
-  $("#statDayBar").style.width = pct + "%";
   $("#dayBar").style.width = pct + "%";
-  $("#statDayPct").textContent = `DAY PROGRESS · ${pct.toFixed(1)}%`;
   $("#dayPct").textContent = `DAY PROGRESS · ${pct.toFixed(1)}%`;
+  $("#statDayPct").textContent = pct.toFixed(1) + "%";
 }
 
 function renderStopwatch() {
@@ -626,16 +983,11 @@ function renderStopwatch() {
   $("#stopToggle").textContent = stopwatch.running ? "暂停" : stopwatch.elapsed ? "继续" : "开始";
 }
 
-function stopwatchTick() {
-  renderStopwatch();
-}
-
 /* ============================================================
-   统计 / 仪表盘
+   统计
    ============================================================ */
 function refreshStats() {
-  const today = todayCount("rhine.today.decisions").n;
-  $("#statToday").textContent = pad2(today);
+  $("#statToday").textContent = pad2(todayCount("rhine.today.decisions").n);
   $("#statRuns").textContent = pad3(store.get("rhine.runs", 0));
   $("#statFocus").textContent = pad2(todayCount("rhine.focusDone").n);
 }
@@ -648,8 +1000,11 @@ const MODAL_MAP = {
   focus: "modalFocus",
   dice: "modalDice",
   note: "modalNote",
-  clock: "modalClock"
+  clock: "modalClock",
+  plaza: "modalPlaza",
+  auth: "modalAuth"
 };
+const MODAL_NAME = Object.fromEntries(Object.entries(MODAL_MAP).map(([k, v]) => [v, k]));
 
 let currentModal = null;
 
@@ -675,18 +1030,26 @@ function closeModal() {
   currentModal.hidden = true;
   currentModal = null;
   document.body.style.overflow = "";
-  onModalClosed();
+  closePopover();
+}
+
+function openAuthFrom(name) {
+  authReturnTo = name;
+  resetAuthForm();
+  openModal("auth");
 }
 
 function onModalOpened(name) {
   if (name === "random") {
     renderCats();
     renderPresetPool();
+    renderSheetsGuest();
     renderImportPool();
     refreshPoolUI();
     renderHistory();
-    updateImportStatus(customPool.length ? `已载入 ${customPool.length} 项（本机会话保留）` : "未导入");
+    updateImportStatus(tempItems.length ? `${tempItems.length} 项（仅支持逐项移除）` : "未导入");
   }
+  if (name === "sheets") { /* 不单独存在 */ }
   if (name === "focus") renderFocus();
   if (name === "dice") renderDiceBoard();
   if (name === "note") {
@@ -697,15 +1060,89 @@ function onModalOpened(name) {
     renderClock();
     renderStopwatch();
   }
+  if (name === "plaza") refreshPlaza();
 }
 
-function onModalClosed() {
-  /* 保持定时器运行：专注计时与秒表在后台继续 */
+/* 账号弹层 */
+function togglePopover() {
+  const pop = $("#accountPop");
+  if (pop.hidden) {
+    renderUserUI();
+    pop.hidden = false;
+  } else {
+    pop.hidden = true;
+  }
+}
+function closePopover() {
+  $("#accountPop").hidden = true;
+}
+
+/* 认证表单 */
+let authMode = "login";
+function resetAuthForm() {
+  authMode = "login";
+  $("#authTitle").textContent = "登录";
+  $("#authSub").textContent = "登录后，清单与文章将随账号同步。";
+  $("#authSubmit").textContent = "登录";
+  $("#authSwitch").textContent = "立即注册";
+  $("#authError").hidden = true;
+  $("#authError").textContent = "";
+}
+function setAuthMode(mode) {
+  authMode = mode;
+  if (mode === "register") {
+    $("#authTitle").textContent = "创建账号";
+    $("#authSub").textContent = "注册后，清单与文章将随账号同步。";
+    $("#authSubmit").textContent = "注册";
+    $("#authSwitch").textContent = "已有账号？去登录";
+  } else {
+    $("#authTitle").textContent = "登录";
+    $("#authSub").textContent = "登录后，清单与文章将随账号同步。";
+    $("#authSubmit").textContent = "登录";
+    $("#authSwitch").textContent = "立即注册";
+  }
+}
+async function submitAuth() {
+  const username = $("#authUser").value.trim();
+  const password = $("#authPass").value;
+  const errEl = $("#authError");
+  if (!username || !password) {
+    errEl.textContent = "请填写用户名和密码";
+    errEl.hidden = false;
+    return;
+  }
+  if (password.length < 6) {
+    errEl.textContent = "密码至少 6 位";
+    errEl.hidden = false;
+    return;
+  }
+  errEl.hidden = true;
+  $("#authSubmit").disabled = true;
+  try {
+    const path = authMode === "register" ? "/api/register" : "/api/login";
+    const data = await api(path, { method: "POST", body: { username, password } });
+    setAuth(data.token, data.username);
+    toast(authMode === "register" ? `欢迎，${data.username}！` : `欢迎回来，${data.username}`, "ok");
+    $("#authUser").value = "";
+    $("#authPass").value = "";
+    closeModal();
+    if (authReturnTo) {
+      const back = authReturnTo;
+      authReturnTo = null;
+      openModal(back);
+    }
+    checkHealth();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.hidden = false;
+  } finally {
+    $("#authSubmit").disabled = false;
+  }
 }
 
 /* ---------- 事件绑定 ---------- */
 document.addEventListener("DOMContentLoaded", () => {
-  /* 弹窗开关 */
+  /* 模块卡片与通用按钮 */
   $$("[data-module]").forEach((card) => {
     const name = card.dataset.module;
     const open = () => openModal(name);
@@ -720,6 +1157,12 @@ document.addEventListener("DOMContentLoaded", () => {
   $$("[data-open]").forEach((b) =>
     b.addEventListener("click", () => openModal(b.dataset.open))
   );
+  $$("[data-open-auth]").forEach((b) =>
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openAuthFrom(currentModal ? MODAL_NAME[currentModal.id] : null);
+    })
+  );
   $$("[data-scroll]").forEach((b) =>
     b.addEventListener("click", () => {
       const target = document.getElementById(b.dataset.scroll);
@@ -729,6 +1172,23 @@ document.addEventListener("DOMContentLoaded", () => {
   $$("[data-close]").forEach((el) => el.addEventListener("click", closeModal));
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") closeModal();
+  });
+
+  /* 顶栏用户 */
+  $("#userBtn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (isAuthed()) togglePopover();
+    else openAuthFrom(null);
+  });
+  $("#logoutBtn").addEventListener("click", async () => {
+    try { await api("/api/logout", { method: "POST" }); } catch (e) { /* 忽略 */ }
+    clearAuth();
+    closePopover();
+    toast("已退出登录");
+  });
+  document.addEventListener("click", (e) => {
+    const pop = $("#accountPop");
+    if (!pop.hidden && !pop.contains(e.target) && e.target !== $("#userBtn")) pop.hidden = true;
   });
 
   /* —— 随机选择器 —— */
@@ -761,6 +1221,91 @@ document.addEventListener("DOMContentLoaded", () => {
     renderPresetPool();
     refreshPoolUI();
     renderPreviewChips();
+  });
+
+  /* 云端清单 */
+  $("#sheetNewBtn").addEventListener("click", () => {
+    $("#newSheetBox").hidden = false;
+    $("#renameBox").hidden = true;
+    $("#newSheetName").focus();
+  });
+  $("#newSheetCancel").addEventListener("click", () => { $("#newSheetBox").hidden = true; });
+  $("#newSheetSave").addEventListener("click", async () => {
+    const name = $("#newSheetName").value.trim();
+    if (!name) { toast("请填写清单名称", "err"); return; }
+    const items = $("#newSheetItems").value
+      .split(/\n+/).map((s) => s.trim()).filter(Boolean);
+    try {
+      const data = await api("/api/sheets", { method: "POST", body: { name, items } });
+      $("#newSheetBox").hidden = true;
+      $("#newSheetName").value = "";
+      $("#newSheetItems").value = "";
+      await loadSheets();
+      await selectSheet(data.sheet.id);
+      toast(`清单「${name}」已创建`, "ok");
+    } catch (e) {
+      toast(e.message, "err");
+    }
+  });
+  $("#renameCancel").addEventListener("click", () => { $("#renameBox").hidden = true; });
+  $("#sheetRenameBtn").addEventListener("click", () => {
+    if (!sheets.state.activeId) { toast("请先选择一个清单", "err"); return; }
+    const s = sheets.state.list.find((x) => x.id === sheets.state.activeId);
+    $("#renameInput").value = s ? s.name : "";
+    $("#renameBox").hidden = false;
+    $("#newSheetBox").hidden = true;
+    $("#renameInput").focus();
+  });
+  $("#renameSave").addEventListener("click", async () => {
+    const name = $("#renameInput").value.trim();
+    if (!name) { toast("请填写清单名称", "err"); return; }
+    try {
+      await api("/api/sheets/" + sheets.state.activeId, { method: "PUT", body: { name } });
+      const s = sheets.state.list.find((x) => x.id === sheets.state.activeId);
+      if (s) s.name = name;
+      renderSheetTabs();
+      renderSheetPool();
+      $("#renameBox").hidden = true;
+      toast("清单已重命名", "ok");
+    } catch (e) {
+      toast(e.message, "err");
+    }
+  });
+  $("#sheetDeleteBtn").addEventListener("click", (e) => {
+    if (!sheets.state.activeId) { toast("请先选择一个清单", "err"); return; }
+    armButton(e.currentTarget, "再点一次确认删除", async () => {
+      try {
+        const id = sheets.state.activeId;
+        await api("/api/sheets/" + id, { method: "DELETE" });
+        sheets.state.activeId = null;
+        sheets.state.items = [];
+        await loadSheets();
+        renderSheetPool();
+        refreshPoolUI();
+        toast("清单已删除", "ok");
+      } catch (err) {
+        toast(err.message, "err");
+      }
+    });
+  });
+  $("#sheetAddBtn").addEventListener("click", async () => {
+    if (!sheets.state.activeId) { toast("请先选择一个清单", "err"); return; }
+    const text = $("#sheetAddInput").value.trim();
+    if (!text) return;
+    if (sheets.state.items.includes(text)) { toast("该选项已存在", "err"); return; }
+    const next = sheets.state.items.concat([text]);
+    try {
+      await api("/api/sheets/" + sheets.state.activeId, { method: "PUT", body: { items: next } });
+      sheets.state.items = next;
+      const s = sheets.state.list.find((x) => x.id === sheets.state.activeId);
+      if (s) s.count = next.length;
+      $("#sheetAddInput").value = "";
+      renderSheetPool();
+      renderSheetTabs();
+      refreshPoolUI();
+    } catch (e) {
+      toast(e.message, "err");
+    }
   });
 
   /* 导入：文件 */
@@ -801,20 +1346,26 @@ document.addEventListener("DOMContentLoaded", () => {
     if (loadCustom(items, "粘贴文本")) $("#pasteArea").value = "";
   });
 
-  $("#importSelectAll").addEventListener("click", () => {
-    customSel = new Set(customPool);
-    persistPools();
-    renderImportPool();
-    refreshPoolUI();
+  /* 存为我的清单 */
+  $("#saveToSheetBtn").addEventListener("click", () => {
+    if (!isAuthed()) { openAuthFrom("random"); return; }
+    if (!tempItems.length) { toast("临时名单为空", "err"); return; }
+    $("#saveSheetInput").value = "";
+    $("#saveSheetBox").hidden = false;
+    $("#saveSheetInput").focus();
   });
-  $("#importClear").addEventListener("click", () => {
-    customPool = [];
-    customSel = new Set();
-    persistPools();
-    renderImportPool();
-    refreshPoolUI();
-    updateImportStatus("未导入");
-    toast("已清空导入名单。");
+  $("#saveSheetCancel").addEventListener("click", () => { $("#saveSheetBox").hidden = true; });
+  $("#saveSheetConfirm").addEventListener("click", async () => {
+    const name = $("#saveSheetInput").value.trim();
+    if (!name) { toast("请填写清单名称", "err"); return; }
+    try {
+      await api("/api/sheets", { method: "POST", body: { name, items: tempItems.slice() } });
+      $("#saveSheetBox").hidden = true;
+      toast(`已保存到我的清单「${name}」`, "ok");
+      await loadSheets();
+    } catch (e) {
+      toast(e.message, "err");
+    }
   });
 
   /* 抽取选项 */
@@ -833,18 +1384,15 @@ document.addEventListener("DOMContentLoaded", () => {
     clampQty();
   });
 
-  function setSwitch(btn, on) {
-    btn.setAttribute("aria-checked", on ? "true" : "false");
-  }
   $("#allowRepeat").addEventListener("click", () => {
     picker.noRepeat = !picker.noRepeat;
-    setSwitch($("#allowRepeat"), !picker.noRepeat);
+    $("#allowRepeat").setAttribute("aria-checked", picker.noRepeat ? "false" : "true");
     $("#repeatLabel").textContent = picker.noRepeat ? "去重" : "可重复";
     clampQty();
   });
   $("#consumeSwitch").addEventListener("click", () => {
     picker.consume = !picker.consume;
-    setSwitch($("#consumeSwitch"), picker.consume);
+    $("#consumeSwitch").setAttribute("aria-checked", picker.consume ? "true" : "false");
     $("#consumeLabel").textContent = picker.consume ? "消耗" : "保留";
   });
 
@@ -854,7 +1402,65 @@ document.addEventListener("DOMContentLoaded", () => {
     history = [];
     persistPools();
     renderHistory();
-    toast("抽取历史已清空。");
+    toast("已清空本次抽取记录（名单不受影响）");
+  });
+
+  /* —— 文章广场 —— */
+  $("#plazaNewBtn").addEventListener("click", () => openEditor(null));
+  $("#plazaFilterAll").addEventListener("click", () => {
+    plaza.state.filter = "all";
+    $("#plazaFilterAll").classList.add("active");
+    $("#plazaFilterMine").classList.remove("active");
+    renderPlazaList();
+  });
+  $("#plazaFilterMine").addEventListener("click", () => {
+    plaza.state.filter = "mine";
+    $("#plazaFilterMine").classList.add("active");
+    $("#plazaFilterAll").classList.remove("active");
+    renderPlazaList();
+  });
+  $("#readerBack").addEventListener("click", () => {
+    plaza.state.view = "list";
+    plaza.state.current = null;
+    renderPlazaView();
+  });
+  $("#editorBack").addEventListener("click", () => {
+    plaza.state.view = "list";
+    renderPlazaView();
+  });
+  $("#editorCancel").addEventListener("click", () => {
+    plaza.state.view = "list";
+    renderPlazaView();
+  });
+  $("#editorPublic").addEventListener("click", () => {
+    const on = $("#editorPublic").getAttribute("aria-checked") !== "true";
+    setEditorPublic(on);
+  });
+  $("#editorSave").addEventListener("click", saveArticle);
+  $("#editArticleBtn").addEventListener("click", () => {
+    if (plaza.state.current) openEditor(plaza.state.current);
+  });
+  $("#deleteArticleBtn").addEventListener("click", (e) => {
+    if (!plaza.state.current) return;
+    armButton(e.currentTarget, "再点一次确认删除", async () => {
+      try {
+        await api("/api/articles/" + plaza.state.current.id, { method: "DELETE" });
+        toast("文章已删除");
+        await loadArticles();
+        plaza.state.view = "list";
+        plaza.state.current = null;
+        renderPlazaView();
+      } catch (err) {
+        toast(err.message, "err");
+      }
+    });
+  });
+
+  /* —— 认证 —— */
+  $("#authSwitch").addEventListener("click", () => setAuthMode(authMode === "login" ? "register" : "login"));
+  $("#authSubmit").addEventListener("click", submitAuth);
+  $("#authPass").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitAuth();
   });
 
   /* —— 专注计时 —— */
@@ -910,7 +1516,7 @@ document.addEventListener("DOMContentLoaded", () => {
     } else {
       stopwatch.running = true;
       stopwatch.startTs = Date.now();
-      stopwatch.id = setInterval(stopwatchTick, 100);
+      stopwatch.id = setInterval(renderStopwatch, 100);
     }
     renderStopwatch();
   });
@@ -922,17 +1528,31 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   /* —— 初始化 —— */
+  renderUserUI();
   renderPreviewChips();
   renderFocus();
   renderDiceBoard();
   renderNotePreview();
   refreshStats();
+  refreshPlazaCard();
   renderClock();
   setInterval(renderClock, 1000);
   setInterval(refreshStats, 30000);
-  updateImportStatus(customPool.length ? `已载入 ${customPool.length} 项（本机会话保留）` : "未导入");
+  checkHealth();
 
-  /* URL 参数直达：?open=random|focus|dice|note|clock（便于演示与截图） */
+  /* 启动时若有 token，校验一次会话 */
+  if (auth.token) {
+    api("/api/me").then((data) => {
+      if (data && data.username) {
+        auth.username = data.username;
+        store.set("rhine.auth", { token: auth.token, username: auth.username });
+        renderUserUI();
+        refreshPlazaCard();
+      }
+    }).catch(() => { /* 401 已在 api 内处理 */ });
+  }
+
+  /* URL 参数直达：?open=random|focus|dice|note|clock|plaza */
   const openParam = new URLSearchParams(location.search).get("open");
   if (openParam) openModal(openParam);
 });
