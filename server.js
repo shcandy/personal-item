@@ -347,7 +347,35 @@ routes["POST api/logout"] = (req, res) => {
 routes["GET api/me"] = (req, res) => {
   const a = requireAuth(req, res);
   if (!a) return;
-  json(res, 200, { id: a.user.id, username: a.user.username });
+  json(res, 200, { id: a.user.id, username: a.user.username, avatar: a.user.avatar || null });
+};
+
+/* 自定义头像：emoji（≤16 字符）或 data:image/*（≤120KB base64）；空值表示恢复默认 */
+routes["PUT api/me/avatar"] = async (req, res) => {
+  const a = requireAuth(req, res);
+  if (!a) return;
+  const body = await readBody(req);
+  const avatar = body.avatar;
+  if (avatar !== null && avatar !== undefined && typeof avatar !== "string") {
+    return json(res, 400, { error: "头像格式不正确" });
+  }
+  if (typeof avatar === "string" && avatar.trim()) {
+    const v = avatar.trim();
+    const isImage = v.startsWith("data:image/");
+    if (isImage) {
+      if (!/^data:image\/(png|jpeg|webp|gif);base64,/i.test(v)) {
+        return json(res, 400, { error: "仅支持 PNG / JPEG / WebP / GIF 图片" });
+      }
+      if (v.length > 120000) return json(res, 400, { error: "头像图片过大（请小于 90KB）" });
+    } else if (v.length > 16) {
+      return json(res, 400, { error: "头像字符过长" });
+    }
+    a.user.avatar = v;
+  } else {
+    a.user.avatar = null;
+  }
+  saveDb();
+  json(res, 200, { avatar: a.user.avatar });
 };
 
 /* —— 云端清单（sheet） —— */

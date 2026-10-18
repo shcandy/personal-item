@@ -136,14 +136,98 @@ function beep() {
 /* ============================================================
    认证与 API
    ============================================================ */
+const savedAuth = store.get("rhine.auth", { token: "", username: "" });
 const auth = {
-  token: store.get("rhine.auth", { token: "", username: "" }).token || "",
-  username: store.get("rhine.auth", { token: "", username: "" }).username || ""
+  token: savedAuth.token || "",
+  username: savedAuth.username || "",
+  avatar: savedAuth.avatar || null
 };
 let serverOnline = true;
 let authReturnTo = null; // 登录成功后的返回目标（模块名）
 
 function isAuthed() { return Boolean(auth.token); }
+
+/* 头像渲染：支持 emoji 或图片 data URL */
+function paintAvatar(el, name, avatar) {
+  if (!el) return;
+  el.textContent = "";
+  el.style.backgroundImage = "";
+  el.classList.remove("has-image");
+  if (avatar && avatar.startsWith("data:image/")) {
+    el.style.backgroundImage = `url("${avatar}")`;
+    el.classList.add("has-image");
+  } else if (avatar) {
+    el.textContent = avatar;
+  } else {
+    el.textContent = (name || "访").slice(0, 1).toUpperCase();
+  }
+}
+
+/* 个性化偏好：主题 / 强调色 / 阅读字体 / 动效 */
+const THEME_KEY = "rhine.theme";
+const ACCENT_KEY = "rhine.accent";
+const READER_KEY = "rhine.reader";
+const MOTION_KEY = "rhine.motion";
+let themeMode = store.get(THEME_KEY, "system") || "system";
+
+function systemPrefersDark() {
+  try {
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  } catch (e) {
+    return false;
+  }
+}
+function syncSeg(containerSel, dataKey, value) {
+  $$(containerSel + " .mini-btn").forEach((b) => {
+    b.classList.toggle("active", b.dataset[dataKey] === value);
+  });
+}
+function applyTheme(mode) {
+  themeMode = mode;
+  const dark = mode === "dark" || (mode !== "light" && systemPrefersDark());
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  const btn = $("#themeBtn");
+  if (btn) {
+    btn.textContent = dark ? "☀️" : "🌙";
+    btn.title = dark ? "切换到浅色" : "切换到深色";
+    btn.setAttribute("aria-label", btn.title);
+  }
+  syncSeg("#themeSeg", "themeMode", mode);
+}
+function applyAccent(value) {
+  document.documentElement.dataset.accent = value;
+  $$("#accentRow .accent-dot").forEach((d) => {
+    d.classList.toggle("active", d.dataset.accent === value);
+  });
+}
+function applyReader(value) {
+  document.documentElement.dataset.reader = value;
+  syncSeg("#readerSeg", "reader", value);
+}
+function applyMotion(value) {
+  document.documentElement.dataset.motion = value;
+  syncSeg("#motionSeg", "motion", value);
+}
+function initPrefs() {
+  applyTheme(themeMode);
+  applyAccent(store.get(ACCENT_KEY, "blue") || "blue");
+  applyReader(store.get(READER_KEY, "serif") || "serif");
+  applyMotion(store.get(MOTION_KEY, "normal") || "normal");
+
+  const btn = $("#themeBtn");
+  if (btn) {
+    btn.addEventListener("click", () => {
+      const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+      store.set(THEME_KEY, next);
+      applyTheme(next);
+    });
+  }
+  try {
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+      if (themeMode === "system") applyTheme("system");
+    });
+  } catch (e) { /* 旧浏览器忽略 */ }
+}
 
 async function api(path, { method = "GET", body } = {}) {
   const opts = {
@@ -173,10 +257,11 @@ async function api(path, { method = "GET", body } = {}) {
   return data;
 }
 
-function setAuth(token, username) {
+function setAuth(token, username, avatar) {
   auth.token = token;
   auth.username = username;
-  store.set("rhine.auth", { token, username });
+  auth.avatar = avatar || null;
+  store.set("rhine.auth", { token, username, avatar: auth.avatar });
   renderUserUI();
   renderSheetsGuest();
   refreshPlazaCard();
@@ -186,7 +271,8 @@ function setAuth(token, username) {
 function clearAuth() {
   auth.token = "";
   auth.username = "";
-  store.set("rhine.auth", { token: "", username: "" });
+  auth.avatar = null;
+  store.set("rhine.auth", { token: "", username: "", avatar: null });
   sheets.state.list = [];
   sheets.state.activeId = null;
   sheets.state.items = [];
@@ -198,11 +284,99 @@ function clearAuth() {
 
 function renderUserUI() {
   const logged = isAuthed();
-  $("#avatar").textContent = logged ? auth.username.slice(0, 1).toUpperCase() : "访";
+  paintAvatar($("#avatar"), logged ? auth.username : "访", logged ? auth.avatar : null);
+  paintAvatar($("#popAvatar"), logged ? auth.username : "访", logged ? auth.avatar : null);
   $("#userName").textContent = logged ? auth.username : "登录";
-  $("#popAvatar").textContent = logged ? auth.username.slice(0, 1).toUpperCase() : "访";
   $("#popName").textContent = logged ? auth.username : "未登录";
   $("#popSub").textContent = logged ? "清单与文章已同步至该账号" : "登录后可同步清单与文章";
+}
+
+/* 服务端刷新头像（登录后调用） */
+async function refreshProfile() {
+  if (!isAuthed()) return;
+  try {
+    const data = await api("/api/me");
+    if (data && data.avatar !== undefined) {
+      auth.avatar = data.avatar || null;
+      store.set("rhine.auth", { token: auth.token, username: auth.username, avatar: auth.avatar });
+      renderUserUI();
+      paintAvatar($("#avatarPreview"), auth.username, auth.avatar);
+    }
+  } catch (e) { /* 忽略 */ }
+}
+
+/* ---------- 自定义头像 ---------- */
+const AVATAR_PRESETS = ["🦉", "🦊", "🐼", "🐧", "🐱", "🐸", "🌙", "⭐", "🍀", "🔭", "🧪", "🛰️"];
+
+function openAvatarModal() {
+  closePopover();
+  renderAvatarPicker();
+  openModal("avatar");
+}
+
+function renderAvatarPicker() {
+  const grid = $("#avatarGrid");
+  if (!grid) return;
+  grid.innerHTML = "";
+  AVATAR_PRESETS.forEach((emoji) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "avatar-opt" + (auth.avatar === emoji ? " active" : "");
+    b.textContent = emoji;
+    b.addEventListener("click", () => saveAvatar(emoji));
+    grid.appendChild(b);
+  });
+  paintAvatar($("#avatarPreview"), auth.username || "访", auth.avatar);
+}
+
+async function saveAvatar(value) {
+  if (!isAuthed()) {
+    toast("请先登录", "err");
+    return;
+  }
+  try {
+    const data = await api("/api/me/avatar", { method: "PUT", body: { avatar: value } });
+    auth.avatar = data.avatar || null;
+    store.set("rhine.auth", { token: auth.token, username: auth.username, avatar: auth.avatar });
+    renderUserUI();
+    renderAvatarPicker();
+    toast(value ? "头像已更新" : "已恢复默认头像", "ok");
+  } catch (e) {
+    toast(e.message, "err");
+  }
+}
+
+function readAvatarFile(file) {
+  if (!file || !file.type.startsWith("image/")) {
+    toast("请选择图片文件", "err");
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      const size = 128;
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        toast("当前浏览器不支持图片处理", "err");
+        return;
+      }
+      const scale = Math.max(size / img.width, size / img.height);
+      const w = img.width * scale;
+      const h = img.height * scale;
+      ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+      let dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      if (dataUrl.length > 110000) dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+      saveAvatar(dataUrl);
+    };
+    img.onerror = () => toast("图片读取失败", "err");
+    img.src = reader.result;
+  };
+  reader.onerror = () => toast("文件读取失败", "err");
+  reader.readAsDataURL(file);
 }
 
 async function checkHealth() {
@@ -1094,7 +1268,9 @@ const MODAL_MAP = {
   note: "modalNote",
   clock: "modalClock",
   plaza: "modalPlaza",
-  auth: "modalAuth"
+  auth: "modalAuth",
+  avatar: "modalAvatar",
+  settings: "modalSettings"
 };
 const MODAL_NAME = Object.fromEntries(Object.entries(MODAL_MAP).map(([k, v]) => [v, k]));
 
@@ -1163,6 +1339,13 @@ function onModalOpened(name) {
     plazaPoll = setInterval(() => {
       if (plaza.state.view === "list" && isAuthed()) loadArticles();
     }, 10000);
+  }
+  if (name === "avatar") renderAvatarPicker();
+  if (name === "settings") {
+    applyTheme(themeMode);
+    applyAccent(store.get(ACCENT_KEY, "blue") || "blue");
+    applyReader(store.get(READER_KEY, "serif") || "serif");
+    applyMotion(store.get(MOTION_KEY, "normal") || "normal");
   }
 }
 
@@ -1240,6 +1423,7 @@ async function submitAuth() {
     if (authMode === "register") payload.inviteCode = inviteCode;
     const data = await api(path, { method: "POST", body: payload });
     setAuth(data.token, data.username);
+    refreshProfile();
     toast(authMode === "register" ? `欢迎，${data.username}！` : `欢迎回来，${data.username}`, "ok");
     $("#authUser").value = "";
     $("#authPass").value = "";
@@ -1310,6 +1494,49 @@ document.addEventListener("DOMContentLoaded", () => {
     clearAuth();
     closePopover();
     toast("已退出登录");
+  });
+  $("#avatarBtn").addEventListener("click", openAvatarModal);
+  $("#avatarReset").addEventListener("click", () => saveAvatar(null));
+  $("#avatarFile").addEventListener("change", (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) readAvatarFile(file);
+    e.target.value = "";
+  });
+
+  /* 个性化设置 */
+  const openSettings = () => openModal("settings");
+  $("#settingsBtn").addEventListener("click", openSettings);
+  $("#settingsFromPopBtn").addEventListener("click", () => {
+    closePopover();
+    openSettings();
+  });
+  $("#themeSeg").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-theme-mode]");
+    if (!b) return;
+    store.set(THEME_KEY, b.dataset.themeMode);
+    applyTheme(b.dataset.themeMode);
+  });
+  $("#accentRow").addEventListener("click", (e) => {
+    const d = e.target.closest("[data-accent]");
+    if (!d) return;
+    store.set(ACCENT_KEY, d.dataset.accent);
+    applyAccent(d.dataset.accent);
+  });
+  $("#readerSeg").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-reader]");
+    if (!b) return;
+    store.set(READER_KEY, b.dataset.reader);
+    applyReader(b.dataset.reader);
+  });
+  $("#motionSeg").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-motion]");
+    if (!b) return;
+    store.set(MOTION_KEY, b.dataset.motion);
+    applyMotion(b.dataset.motion);
+  });
+  $("#settingsAvatarBtn").addEventListener("click", () => {
+    closeModal();
+    openAvatarModal();
   });
   document.addEventListener("click", (e) => {
     const pop = $("#accountPop");
@@ -1655,6 +1882,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   /* —— 初始化 —— */
+  initPrefs();
   renderUserUI();
   renderPreviewChips();
   renderFocus();
@@ -1673,7 +1901,8 @@ document.addEventListener("DOMContentLoaded", () => {
     api("/api/me").then((data) => {
       if (data && data.username) {
         auth.username = data.username;
-        store.set("rhine.auth", { token: auth.token, username: auth.username });
+        if (data.avatar !== undefined) auth.avatar = data.avatar || null;
+        store.set("rhine.auth", { token: auth.token, username: auth.username, avatar: auth.avatar });
         renderUserUI();
         refreshPlazaCard();
       }
