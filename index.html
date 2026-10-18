@@ -43,6 +43,11 @@
     <button class="pop-btn" id="logoutBtn">退出登录</button>
   </div>
 
+  <div class="static-banner" id="staticBanner" hidden>
+    <span>当前是 GitHub Pages 静态展示页，登录 / 注册 / 评论不可用。</span>
+    <a href="https://rhine-terminal.onrender.com" target="_blank" rel="noopener">前往正式站点 →</a>
+  </div>
+
   <main class="shell">
     <!-- 首屏 -->
     <section class="hero">
@@ -554,10 +559,13 @@
           <button class="back-link" id="editorBack">‹ 返回</button>
           <input class="text-input title-input" id="editorTitle" placeholder="标题" maxlength="100" />
           <div class="editor-privacy">
-            <span>可见范围</span>
-            <button class="switch" id="editorPublic" role="switch" aria-checked="false"><span class="knob"></span></button>
-            <span class="mono switch-label" id="editorPublicLabel">仅自己可见</span>
+            <span class="privacy-label">可见范围</span>
+            <div class="privacy-seg" role="radiogroup" aria-label="可见范围">
+              <button type="button" class="privacy-opt active" id="editorPrivate">仅自己可见</button>
+              <button type="button" class="privacy-opt" id="editorPublic" aria-checked="false">圈子可见</button>
+            </div>
           </div>
+          <p class="privacy-hint" id="editorPublicLabel">仅自己可见：只有你能看到这篇文章。</p>
           <textarea class="text-area editor-content" id="editorContent" placeholder="写点什么……&#10;支持纯文本，段落之间空一行。"></textarea>
           <div class="editor-actions">
             <span class="mono editor-status" id="editorStatus"></span>

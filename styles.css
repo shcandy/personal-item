@@ -30,6 +30,9 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* 关键：作者样式里的 display 会覆盖 hidden 属性，这里统一兜底 */
+[hidden] { display: none !important; }
+
 html { scroll-behavior: smooth; }
 
 body {
@@ -45,6 +48,25 @@ body {
 .mono { font-family: var(--mono); }
 
 ::selection { background: rgba(0, 113, 227, 0.22); }
+
+/* 静态托管提示条（GitHub Pages 无后端） */
+.static-banner {
+  max-width: 1024px;
+  margin: 14px auto 0;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: rgba(255, 149, 0, 0.12);
+  border: 1px solid rgba(255, 149, 0, 0.32);
+  color: #8a5000;
+  font-size: 13.5px;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.static-banner[hidden] { display: none; }
+.static-banner a { color: var(--blue); font-weight: 600; }
 
 /* ---------- 顶栏 ---------- */
 .topbar {
@@ -1052,7 +1074,49 @@ body {
 /* 编辑器 */
 .plaza-editor { display: flex; flex-direction: column; gap: 14px; }
 .title-input { font-size: 20px; font-weight: 600; padding: 13px 16px; }
-.editor-privacy { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--ink2); }
+.editor-privacy {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 14px;
+  color: var(--ink2);
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 12px;
+}
+.privacy-label { font-weight: 600; color: var(--ink); }
+.privacy-seg {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 980px;
+  background: rgba(0, 0, 0, 0.06);
+}
+.privacy-opt {
+  border: none;
+  background: transparent;
+  color: var(--ink2);
+  border-radius: 980px;
+  padding: 6px 14px;
+  font-family: var(--sans);
+  font-size: 13.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.privacy-opt:hover { color: var(--ink); }
+.privacy-opt.active {
+  background: var(--blue);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 1px 6px rgba(0, 113, 227, 0.35);
+}
+.privacy-hint {
+  font-size: 12.5px;
+  color: var(--ink3);
+  margin: -4px 2px 2px;
+}
 .editor-content {
   min-height: 300px;
   font-family: var(--serif);

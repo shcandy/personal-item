@@ -67,6 +67,12 @@ function toast(message, kind = "") {
   }, 2600);
 }
 
+/* GitHub Pages 等静态托管页：提示去正式站点 */
+function showStaticBanner() {
+  const el = $("#staticBanner");
+  if (el) el.hidden = false;
+}
+
 /* 当日计数 */
 function todayCount(key) {
   const rec = store.get(key, { date: "", n: 0 });
@@ -211,6 +217,7 @@ async function checkHealth() {
     const chip = $("#serverChip");
     chip.textContent = "● 本地模式";
     chip.classList.remove("online");
+    if (location.hostname.endsWith("github.io")) showStaticBanner();
   }
 }
 
@@ -861,9 +868,14 @@ function openEditor(article) {
 }
 
 function setEditorPublic(on) {
-  const sw = $("#editorPublic");
-  sw.setAttribute("aria-checked", on ? "true" : "false");
-  $("#editorPublicLabel").textContent = on ? "圈子可见" : "仅自己可见";
+  const pubBtn = $("#editorPublic");
+  const privBtn = $("#editorPrivate");
+  pubBtn.setAttribute("aria-checked", on ? "true" : "false");
+  pubBtn.classList.toggle("active", on);
+  privBtn.classList.toggle("active", !on);
+  $("#editorPublicLabel").textContent = on
+    ? "圈子可见：所有受邀成员都能看到这篇文章。"
+    : "仅自己可见：只有你能看到这篇文章。";
 }
 
 async function saveArticle() {
@@ -1239,7 +1251,14 @@ async function submitAuth() {
     }
     checkHealth();
   } catch (e) {
-    errEl.textContent = e.message;
+    if (e.status === 405) {
+      errEl.innerHTML =
+        '当前是 GitHub Pages 静态展示页，无法登录。请前往 ' +
+        '<a href="https://rhine-terminal.onrender.com" target="_blank" rel="noopener">正式站点 rhine-terminal.onrender.com</a>。';
+      showStaticBanner();
+    } else {
+      errEl.textContent = e.message;
+    }
     errEl.hidden = false;
   } finally {
     $("#authSubmit").disabled = false;
@@ -1538,10 +1557,8 @@ document.addEventListener("DOMContentLoaded", () => {
     plaza.state.view = "list";
     renderPlazaView();
   });
-  $("#editorPublic").addEventListener("click", () => {
-    const on = $("#editorPublic").getAttribute("aria-checked") !== "true";
-    setEditorPublic(on);
-  });
+  $("#editorPublic").addEventListener("click", () => setEditorPublic(true));
+  $("#editorPrivate").addEventListener("click", () => setEditorPublic(false));
   $("#editorSave").addEventListener("click", saveArticle);
   $("#commentSend").addEventListener("click", sendComment);
   $("#commentInput").addEventListener("keydown", (e) => {
@@ -1648,6 +1665,7 @@ document.addEventListener("DOMContentLoaded", () => {
   renderClock();
   setInterval(renderClock, 1000);
   setInterval(refreshStats, 30000);
+  if (location.hostname.endsWith("github.io")) showStaticBanner();
   checkHealth();
 
   /* 启动时若有 token，校验一次会话 */
