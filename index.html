@@ -681,8 +681,27 @@
         <div class="avatar-preview-wrap">
           <span class="avatar avatar-lg" id="avatarPreview">访</span>
         </div>
+
+        <!-- 取景裁剪 -->
+        <div class="avatar-crop" id="avatarCrop" hidden>
+          <div class="crop-viewport" id="cropViewport">
+            <img id="cropImage" alt="待裁剪头像" draggable="false" />
+          </div>
+          <div class="crop-controls">
+            <span class="crop-label">缩放</span>
+            <input type="range" id="cropZoom" min="1" max="3" step="0.01" value="1" />
+          </div>
+          <div class="crop-actions">
+            <button class="btn ghost small" id="cropCancel">取消</button>
+            <label class="btn ghost small" for="avatarFile">重新选择</label>
+            <button class="btn primary small" id="cropSave">保存头像</button>
+          </div>
+          <p class="avatar-hint">拖动图片调整位置，滑块缩放；圆形区域就是最终头像。</p>
+        </div>
+
+        <!-- 预设图标 -->
         <div class="avatar-grid" id="avatarGrid"></div>
-        <div class="avatar-actions">
+        <div class="avatar-actions" id="avatarActions">
           <label class="btn ghost small" for="avatarFile">上传图片</label>
           <input type="file" id="avatarFile" accept="image/*" hidden />
           <button class="btn ghost small" id="avatarReset">恢复默认</button>

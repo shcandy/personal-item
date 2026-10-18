@@ -152,6 +152,8 @@ function paintAvatar(el, name, avatar) {
   if (!el) return;
   el.textContent = "";
   el.style.backgroundImage = "";
+  el.style.backgroundSize = "";
+  el.style.backgroundPosition = "";
   el.classList.remove("has-image");
   if (avatar && avatar.startsWith("data:image/")) {
     el.style.backgroundImage = `url("${avatar}")`;
@@ -317,6 +319,7 @@ function openAvatarModal() {
 function renderAvatarPicker() {
   const grid = $("#avatarGrid");
   if (!grid) return;
+  setCropMode(false);
   grid.innerHTML = "";
   AVATAR_PRESETS.forEach((emoji) => {
     const b = document.createElement("button");
@@ -346,37 +349,112 @@ async function saveAvatar(value) {
   }
 }
 
-function readAvatarFile(file) {
+/* ---------- 头像取景裁剪 ---------- */
+const crop = {
+  img: null,
+  url: null,
+  W: 0,
+  H: 0,
+  view: 260,
+  scale0: 1,
+  zoom: 1,
+  tx: 0,
+  ty: 0,
+  dragging: false,
+  lastX: 0,
+  lastY: 0
+};
+
+function setCropMode(on) {
+  const cropEl = $("#avatarCrop");
+  const grid = $("#avatarGrid");
+  const actions = $("#avatarActions");
+  if (!cropEl) return;
+  cropEl.hidden = !on;
+  grid.hidden = on;
+  actions.hidden = on;
+}
+
+function openCropWithFile(file) {
   if (!file || !file.type.startsWith("image/")) {
     toast("请选择图片文件", "err");
     return;
   }
-  const reader = new FileReader();
-  reader.onload = () => {
-    const img = new Image();
-    img.onload = () => {
-      const size = 128;
-      const canvas = document.createElement("canvas");
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        toast("当前浏览器不支持图片处理", "err");
-        return;
-      }
-      const scale = Math.max(size / img.width, size / img.height);
-      const w = img.width * scale;
-      const h = img.height * scale;
-      ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
-      let dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-      if (dataUrl.length > 110000) dataUrl = canvas.toDataURL("image/jpeg", 0.6);
-      saveAvatar(dataUrl);
-    };
-    img.onerror = () => toast("图片读取失败", "err");
-    img.src = reader.result;
+  if (crop.url) URL.revokeObjectURL(crop.url);
+  crop.url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    crop.img = img;
+    crop.W = img.naturalWidth || img.width;
+    crop.H = img.naturalHeight || img.height;
+    /* 先显示取景区域，再测量宽度（隐藏元素宽度为 0） */
+    setCropMode(true);
+    const viewport = $("#cropViewport");
+    crop.view = (viewport && viewport.clientWidth) || 260;
+    crop.scale0 = Math.max(crop.view / crop.W, crop.view / crop.H);
+    crop.zoom = 1;
+    crop.tx = (crop.view - crop.W * crop.scale0) / 2;
+    crop.ty = (crop.view - crop.H * crop.scale0) / 2;
+    const imgEl = $("#cropImage");
+    imgEl.src = crop.url;
+    $("#cropZoom").value = "1";
+    layoutCrop();
   };
-  reader.onerror = () => toast("文件读取失败", "err");
-  reader.readAsDataURL(file);
+  img.onerror = () => toast("图片读取失败，请换一张试试", "err");
+  img.src = crop.url;
+}
+
+function layoutCrop() {
+  if (!crop.img) return;
+  const s = crop.scale0 * crop.zoom;
+  const w = crop.W * s;
+  const h = crop.H * s;
+  /* 约束：图片始终覆盖取景框 */
+  crop.tx = Math.min(0, Math.max(crop.view - w, crop.tx));
+  crop.ty = Math.min(0, Math.max(crop.view - h, crop.ty));
+  const imgEl = $("#cropImage");
+  imgEl.style.width = w + "px";
+  imgEl.style.height = h + "px";
+  imgEl.style.left = crop.tx + "px";
+  imgEl.style.top = crop.ty + "px";
+
+  /* 实时预览：把取景框内容映射到 76px 预览圆 */
+  const preview = $("#avatarPreview");
+  const pv = 76;
+  const ratio = pv / crop.view;
+  preview.style.backgroundImage = `url("${crop.url}")`;
+  preview.style.backgroundSize = `${w * ratio}px ${h * ratio}px`;
+  preview.style.backgroundPosition = `${crop.tx * ratio}px ${crop.ty * ratio}px`;
+  preview.textContent = "";
+  preview.classList.add("has-image");
+}
+
+function saveCroppedAvatar() {
+  if (!crop.img) return;
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    toast("当前浏览器不支持图片处理", "err");
+    return;
+  }
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  const ratio = size / crop.view;
+  const s = crop.scale0 * crop.zoom;
+  ctx.drawImage(crop.img, crop.tx * ratio, crop.ty * ratio, crop.W * s * ratio, crop.H * s * ratio);
+  let dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+  if (dataUrl.length > 110000) dataUrl = canvas.toDataURL("image/jpeg", 0.72);
+  if (dataUrl.length > 110000) dataUrl = canvas.toDataURL("image/jpeg", 0.55);
+  setCropMode(false);
+  saveAvatar(dataUrl);
+}
+
+function cancelCrop() {
+  setCropMode(false);
+  paintAvatar($("#avatarPreview"), auth.username || "访", auth.avatar);
 }
 
 async function checkHealth() {
@@ -1295,6 +1373,7 @@ function openModal(name) {
 
 function closeModal() {
   if (!currentModal) return;
+  if (currentModal.id === "modalAvatar") setCropMode(false);
   currentModal.hidden = true;
   currentModal = null;
   document.body.style.overflow = "";
@@ -1499,9 +1578,43 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#avatarReset").addEventListener("click", () => saveAvatar(null));
   $("#avatarFile").addEventListener("change", (e) => {
     const file = e.target.files && e.target.files[0];
-    if (file) readAvatarFile(file);
+    if (file) openCropWithFile(file);
     e.target.value = "";
   });
+
+  /* 头像取景：拖动 + 缩放 */
+  const viewport = $("#cropViewport");
+  viewport.addEventListener("pointerdown", (e) => {
+    if (!crop.img) return;
+    crop.dragging = true;
+    crop.lastX = e.clientX;
+    crop.lastY = e.clientY;
+    try { viewport.setPointerCapture(e.pointerId); } catch (err) { /* 忽略 */ }
+  });
+  viewport.addEventListener("pointermove", (e) => {
+    if (!crop.dragging) return;
+    crop.tx += e.clientX - crop.lastX;
+    crop.ty += e.clientY - crop.lastY;
+    crop.lastX = e.clientX;
+    crop.lastY = e.clientY;
+    layoutCrop();
+  });
+  ["pointerup", "pointercancel", "pointerleave"].forEach((ev) =>
+    viewport.addEventListener(ev, () => { crop.dragging = false; })
+  );
+  $("#cropZoom").addEventListener("input", (e) => {
+    if (!crop.img) return;
+    const next = parseFloat(e.target.value) || 1;
+    const factor = next / crop.zoom;
+    const cx = crop.view / 2;
+    const cy = crop.view / 2;
+    crop.tx = cx - (cx - crop.tx) * factor;
+    crop.ty = cy - (cy - crop.ty) * factor;
+    crop.zoom = next;
+    layoutCrop();
+  });
+  $("#cropSave").addEventListener("click", saveCroppedAvatar);
+  $("#cropCancel").addEventListener("click", cancelCrop);
 
   /* 个性化设置 */
   const openSettings = () => openModal("settings");
