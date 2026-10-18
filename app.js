@@ -335,7 +335,7 @@ function renderAvatarPicker() {
 async function saveAvatar(value) {
   if (!isAuthed()) {
     toast("请先登录", "err");
-    return;
+    return false;
   }
   try {
     const data = await api("/api/me/avatar", { method: "PUT", body: { avatar: value } });
@@ -344,8 +344,10 @@ async function saveAvatar(value) {
     renderUserUI();
     renderAvatarPicker();
     toast(value ? "头像已更新" : "已恢复默认头像", "ok");
+    return true;
   } catch (e) {
     toast(e.message, "err");
+    return false;
   }
 }
 
@@ -392,12 +394,12 @@ function openCropWithFile(file) {
     const viewport = $("#cropViewport");
     crop.view = (viewport && viewport.clientWidth) || 260;
     crop.scale0 = Math.max(crop.view / crop.W, crop.view / crop.H);
-    crop.zoom = 1;
-    crop.tx = (crop.view - crop.W * crop.scale0) / 2;
-    crop.ty = (crop.view - crop.H * crop.scale0) / 2;
+    crop.zoom = 1.2;
+    crop.tx = (crop.view - crop.W * crop.scale0 * crop.zoom) / 2;
+    crop.ty = (crop.view - crop.H * crop.scale0 * crop.zoom) / 2;
     const imgEl = $("#cropImage");
     imgEl.src = crop.url;
-    $("#cropZoom").value = "1";
+    $("#cropZoom").value = "1.2";
     layoutCrop();
   };
   img.onerror = () => toast("图片读取失败，请换一张试试", "err");
@@ -427,9 +429,11 @@ function layoutCrop() {
   preview.style.backgroundPosition = `${crop.tx * ratio}px ${crop.ty * ratio}px`;
   preview.textContent = "";
   preview.classList.add("has-image");
+  const zoomVal = $("#cropZoomVal");
+  if (zoomVal) zoomVal.textContent = Math.round(crop.zoom * 100) + "%";
 }
 
-function saveCroppedAvatar() {
+async function saveCroppedAvatar() {
   if (!crop.img) return;
   const size = 256;
   const canvas = document.createElement("canvas");
@@ -442,14 +446,23 @@ function saveCroppedAvatar() {
   }
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  const ratio = size / crop.view;
+  /* 按取景框对应的源图区域裁切，保证输出与预览一致 */
   const s = crop.scale0 * crop.zoom;
-  ctx.drawImage(crop.img, crop.tx * ratio, crop.ty * ratio, crop.W * s * ratio, crop.H * s * ratio);
+  const sw = crop.view / s;
+  const sh = crop.view / s;
+  const sx = Math.max(0, Math.min(crop.W - sw, -crop.tx / s));
+  const sy = Math.max(0, Math.min(crop.H - sh, -crop.ty / s));
+  ctx.drawImage(crop.img, sx, sy, sw, sh, 0, 0, size, size);
   let dataUrl = canvas.toDataURL("image/jpeg", 0.9);
   if (dataUrl.length > 110000) dataUrl = canvas.toDataURL("image/jpeg", 0.72);
   if (dataUrl.length > 110000) dataUrl = canvas.toDataURL("image/jpeg", 0.55);
-  setCropMode(false);
-  saveAvatar(dataUrl);
+
+  const btn = $("#cropSave");
+  if (btn) btn.disabled = true;
+  const ok = await saveAvatar(dataUrl);
+  if (btn) btn.disabled = false;
+  /* 成功时 saveAvatar 已重置裁剪视图；失败则保留裁剪界面方便重试 */
+  if (!ok) toast("头像保存失败，请重试", "err");
 }
 
 function cancelCrop() {
