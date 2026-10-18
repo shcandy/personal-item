@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RHEIN // 模块化决策终端</title>
+  <meta name="description" content="米白基调、毛玻璃模块化的轻量决策工具台：随机选择器、专注计时、掷骰、速记等。" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2322272b'/%3E%3Crect x='6' y='6' width='20' height='20' fill='none' stroke='%23c9a23c' stroke-width='2'/%3E%3Ccircle cx='22' cy='10' r='3' fill='%23c9a23c'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="bg-grain" aria-hidden="true"></div>
+  <div class="scanline" aria-hidden="true"></div>
+
+  <header class="topbar glass">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <span class="mark-dash"></span><span class="mark-dot"></span>
+      </div>
+      <div class="brand-text">
+        <div class="brand-name">RHEIN <span class="brand-sub">TERMINAL</span></div>
+        <div class="brand-caption">模块化决策终端 · MODULAR DECISION DECK</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="status-chip" title="本地运行中"><span class="pulse" aria-hidden="true"></span>SYS.ONLINE</div>
+      <div class="topbar-clock mono" id="headerClock">--:--:--</div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="hero">
+      <div class="hero-left">
+        <div class="overline mono">MODULAR CONSOLE <span class="overline-cn">· 模块化控制台</span> <span class="overline-num">REF-2026 / A1</span></div>
+        <h1 class="hero-title">让每一次<span class="hl">随机</span>，<br />都有迹可循。</h1>
+        <p class="hero-sub">以秩序为纲的轻量工具台。每个区块是一枚独立的功能模块，点击即可运行；
+          名单可内置、可导入，所有数据仅在本机浏览器中流转。</p>
+        <div class="hero-actions">
+          <button class="btn btn-primary" data-open="random">启动随机选择器 <span class="btn-arrow" aria-hidden="true">→</span></button>
+          <button class="btn btn-ghost" data-scroll="modules">浏览全部模块</button>
+        </div>
+      </div>
+      <aside class="hero-stats glass">
+        <div class="stats-head mono">SYSTEM READOUT</div>
+        <div class="stat-row"><span class="stat-k">今日决策</span><span class="stat-v mono" id="statToday">00</span></div>
+        <div class="stat-row"><span class="stat-k">累计抽取</span><span class="stat-v mono" id="statRuns">000</span></div>
+        <div class="stat-row"><span class="stat-k">完成专注</span><span class="stat-v mono" id="statFocus">00</span></div>
+        <div class="stat-row"><span class="stat-k">模块在线</span><span class="stat-v mono" id="statOnline">6 / 8</span></div>
+        <div class="stat-bar"><span class="stat-bar-fill" id="statDayBar"></span></div>
+        <div class="stat-foot mono" id="statDayPct">DAY PROGRESS · --%</div>
+      </aside>
+    </section>
+
+    <section class="modules" id="modules">
+      <div class="section-head">
+        <h2>模块网络 <span class="en">MODULE NETWORK</span></h2>
+        <p>每个区块即一个独立功能单元，点击卡片即可运行对应功能。</p>
+      </div>
+
+      <div class="grid">
+
+        <!-- M-01 随机选择器 -->
+        <article class="card card-feature glass" data-module="random" tabindex="0" role="button" aria-label="打开随机选择器">
+          <div class="card-corner tl" aria-hidden="true"></div>
+          <div class="card-corner br" aria-hidden="true"></div>
+          <div class="module-head">
+            <div>
+              <div class="module-code mono">M-01 · RANDOM SELECT</div>
+              <h3 class="module-name">随机选择器</h3>
+              <p class="module-desc">内置食物预设，或导入外部名单，一键抽取结果。</p>
+            </div>
+            <span class="status-tag ready">READY</span>
+          </div>
+          <div class="preview-row">
+            <div class="preview-label mono">PRESET POOL</div>
+            <div class="preview-chips" id="previewChips"></div>
+          </div>
+          <div class="card-foot">
+            <span class="mono foot-note">内置 <b id="previewCount">0</b> 项 · 自定义名单已接入</span>
+            <button class="btn btn-primary btn-small" data-open="random">执行抽取 <span aria-hidden="true">→</span></button>
+          </div>
+        </article>
+
+        <!-- M-02 专注计时 -->
+        <article class="card" data-module="focus" tabindex="0" role="button" aria-label="打开专注计时">
+          <div class="module-head">
+            <div>
+              <div class="module-code mono">M-02 · FOCUS TIMER</div>
+              <h3 class="module-name">专注计时</h3>
+              <p class="module-desc">15 / 25 / 45 分钟番茄钟，完成时鸣响提示。</p>
+            </div>
+            <span class="status-tag ready">READY</span>
+          </div>
+          <div class="timer-preview">
+            <span class="timer-digits mono" id="focusPreview">25:00</span>
+            <div class="mini-bar"><span class="mini-bar-fill" id="focusPreviewBar"></span></div>
+          </div>
+          <div class="card-foot">
+            <span class="mono foot-note">今日完成 <b id="focusPreviewDone">0</b> 轮</span>
+            <span class="hint-action">进入专注 →</span>
+          </div>
+        </article>
+
+        <!-- M-03 掷骰子 -->
+        <article class="card" data-module="dice" tabindex="0" role="button" aria-label="打开掷骰子">
+          <div class="module-head">
+            <div>
+              <div class="module-code mono">M-03 · DICE ROLL</div>
+              <h3 class="module-name">掷骰子</h3>
+              <p class="module-desc">1–3 枚骰子同时投掷，附带点数求和。</p>
+            </div>
+            <span class="status-tag ready">READY</span>
+          </div>
+          <div class="dice-preview">
+            <span class="die die-static" id="dicePreviewDie">5</span>
+            <span class="die die-static" id="dicePreviewDie2">2</span>
+          </div>
+          <div class="card-foot">
+            <span class="mono foot-note">掷出即记录</span>
+            <span class="hint-action">投掷 →</span>
+          </div>
+        </article>
+
+        <!-- M-04 速记板 -->
+        <article class="card" data-module="note" tabindex="0" role="button" aria-label="打开速记板">
+          <div class="module-head">
+            <div>
+              <div class="module-code mono">M-04 · QUICK NOTE</div>
+              <h3 class="module-name">速记板</h3>
+              <p class="module-desc">随手记录，自动保存在本机浏览器。</p>
+            </div>
+            <span class="status-tag ready">READY</span>
+          </div>
+          <div class="note-preview mono" id="notePreview">暂无记录 —— 点击开始书写</div>
+          <div class="card-foot">
+            <span class="mono foot-note">自动保存</span>
+            <span class="hint-action">打开 →</span>
+          </div>
+        </article>
+
+        <!-- M-05 时钟与秒表 -->
+        <article class="card" data-module="clock" tabindex="0" role="button" aria-label="打开时钟与秒表">
+          <div class="module-head">
+            <div>
+              <div class="module-code mono">M-05 · CLOCK &amp; STOPWATCH</div>
+              <h3 class="module-name">时钟与秒表</h3>
+              <p class="module-desc">实时时钟、当日进度与秒表计时。</p>
+            </div>
+            <span class="status-tag ready">READY</span>
+          </div>
+          <div class="clock-preview">
+            <span class="clock-digits mono" id="clockPreview">--:--:--</span>
+            <span class="clock-date mono" id="clockPreviewDate">----/--/--</span>
+          </div>
+          <div class="card-foot">
+            <span class="mono foot-note">本地时间</span>
+            <span class="hint-action">展开 →</span>
+          </div>
+        </article>
+
+        <!-- M-06 图表中枢（装配中） -->
+        <article class="card card-wip" data-module="soon" tabindex="0" role="button" aria-label="图表中枢，装配中">
+          <div class="module-head">
+            <div>
+              <div class="module-code mono">M-06 · DATA GRAPH</div>
+              <h3 class="module-name">图表中枢</h3>
+              <p class="module-desc">将抽取与专注数据可视化。装配中。</p>
+            </div>
+            <span class="status-tag wip">WIP</span>
+          </div>
+          <div class="wip-stamp mono">UNDER<br />CONSTRUCTION</div>
+          <div class="card-foot"><span class="mono foot-note">即将接入</span><span class="hint-action">查看 →</span></div>
+        </article>
+
+        <!-- M-07 翻译终端（装配中） -->
+        <article class="card card-wip" data-module="soon" tabindex="0" role="button" aria-label="翻译终端，装配中">
+          <div class="module-head">
+            <div>
+              <div class="module-code mono">M-07 · TRANSLATE</div>
+              <h3 class="module-name">翻译终端</h3>
+              <p class="module-desc">多语互译单元。装配中。</p>
+            </div>
+            <span class="status-tag wip">WIP</span>
+          </div>
+          <div class="wip-stamp mono">UNDER<br />CONSTRUCTION</div>
+          <div class="card-foot"><span class="mono foot-note">即将接入</span><span class="hint-action">查看 →</span></div>
+        </article>
+
+        <!-- M-08 更多模块 -->
+        <article class="card card-wip" data-module="soon" tabindex="0" role="button" aria-label="更多模块，持续扩展中">
+          <div class="module-head">
+            <div>
+              <div class="module-code mono">M-08 · EXTENSION</div>
+              <h3 class="module-name">更多模块</h3>
+              <p class="module-desc">随机数、抽签、换算……持续扩展中。</p>
+            </div>
+            <span class="status-tag wip">WIP</span>
+          </div>
+          <div class="wip-stamp mono">COMING<br />SOON</div>
+          <div class="card-foot"><span class="mono foot-note">预留接口</span><span class="hint-action">查看 →</span></div>
+        </article>
+
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer mono">
+    <span>RHEIN TERMINAL · 本地运行</span>
+    <span>数据仅存储于当前浏览器 · LOCAL STORAGE ONLY</span>
+  </footer>
+
+  <!-- ============ M-01 随机选择器 ============ -->
+  <div class="modal-root" id="modalRandom" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="randomTitle">
+      <header class="modal-head">
+        <div>
+          <div class="modal-code mono">M-01 · RANDOM SELECT // 随机选择器</div>
+          <h3 id="randomTitle">随机选择器</h3>
+          <p class="modal-desc">从内置食物预设或外部导入的名单中，抽取随机结果。</p>
+        </div>
+        <button class="close-btn" data-close aria-label="关闭">✕</button>
+      </header>
+
+      <div class="modal-body">
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-tab="preset" role="tab" aria-selected="true">内置预设 · 食物清单</button>
+          <button class="tab" data-tab="import" role="tab" aria-selected="false">外部导入 · 自定义名单</button>
+        </div>
+
+        <!-- 预设面板 -->
+        <section class="tabpane active" data-pane="preset">
+          <div class="cat-row" id="catRow"></div>
+          <div class="chip-grid" id="presetPool"></div>
+          <div class="pool-toolbar">
+            <span class="pool-count mono" id="presetCount">已选 0 / 0</span>
+            <div class="toolbar-btns">
+              <button class="mini-btn" id="presetSelectAll">全选</button>
+              <button class="mini-btn" id="presetClearAll">清空</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 导入面板 -->
+        <section class="tabpane" data-pane="import">
+          <div class="dropzone" id="dropzone" tabindex="0">
+            <input type="file" id="fileInput" accept=".csv,.txt,.json,.tsv" hidden />
+            <div class="dz-icon" aria-hidden="true">⇪</div>
+            <div class="dz-text">将文件拖放到此处，或 <button class="link" id="pickFile" type="button">点击选择文件</button></div>
+            <div class="dz-hint mono">支持 .csv / .txt / .json · 每行一项，自动识别表头</div>
+          </div>
+          <div class="or-divider"><span>或直接粘贴</span></div>
+          <div class="paste-area">
+            <textarea id="pasteArea" rows="4" placeholder="每行一个选项，例如：&#10;番茄牛腩饭&#10;麻辣香锅&#10;豚骨拉面"></textarea>
+            <button class="btn btn-small btn-ghost" id="parsePaste">解析并载入</button>
+          </div>
+          <div class="import-status mono" id="importStatus">当前名单：未导入</div>
+          <div class="chip-grid" id="importPool"></div>
+          <div class="pool-toolbar">
+            <span class="pool-count mono" id="importCount">已选 0 / 0</span>
+            <div class="toolbar-btns">
+              <button class="mini-btn" id="importSelectAll">全选</button>
+              <button class="mini-btn" id="importClear">清空名单</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 抽取选项 -->
+        <section class="options">
+          <div class="option">
+            <label>抽取数量</label>
+            <div class="stepper">
+              <button id="qtyMinus" aria-label="减少数量">−</button>
+              <span class="mono stepper-val" id="qtyVal">1</span>
+              <button id="qtyPlus" aria-label="增加数量">＋</button>
+            </div>
+          </div>
+          <div class="option">
+            <label>重复抽取</label>
+            <button class="switch" id="allowRepeat" role="switch" aria-checked="false"><span class="knob"></span></button>
+            <span class="mono switch-label" id="repeatLabel">去重</span>
+          </div>
+          <div class="option">
+            <label>抽取后</label>
+            <button class="switch" id="consumeSwitch" role="switch" aria-checked="false"><span class="knob"></span></button>
+            <span class="mono switch-label" id="consumeLabel">保留</span>
+          </div>
+        </section>
+
+        <section class="exec-row">
+          <button class="btn btn-primary btn-exec" id="execBtn">开始抽取</button>
+          <span class="exec-note mono" id="execNote">当前池 0 项</span>
+        </section>
+
+        <section class="result-stage" id="resultStage" hidden>
+          <div class="stage-label mono">RESULT // 结果</div>
+          <div class="result-grid" id="resultGrid"></div>
+          <div class="result-actions">
+            <button class="btn btn-ghost btn-small" id="rerollBtn">再抽一次</button>
+            <button class="btn btn-ghost btn-small" id="clearHistBtn">清空历史</button>
+          </div>
+        </section>
+
+        <section class="history" id="historySec" hidden>
+          <div class="stage-label mono">HISTORY // 最近抽取</div>
+          <ul class="history-list" id="historyList"></ul>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ M-02 专注计时 ============ -->
+  <div class="modal-root" id="modalFocus" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-panel modal-narrow" role="dialog" aria-modal="true" aria-labelledby="focusTitle">
+      <header class="modal-head">
+        <div>
+          <div class="modal-code mono">M-02 · FOCUS TIMER // 专注计时</div>
+          <h3 id="focusTitle">专注计时</h3>
+          <p class="modal-desc">选择一个时段，开始一段不被打扰的专注。</p>
+        </div>
+        <button class="close-btn" data-close aria-label="关闭">✕</button>
+      </header>
+      <div class="modal-body">
+        <div class="focus-presets">
+          <button class="mini-btn" data-min="15">15 MIN</button>
+          <button class="mini-btn active" data-min="25">25 MIN</button>
+          <button class="mini-btn" data-min="45">45 MIN</button>
+        </div>
+        <div class="focus-ring">
+          <div class="focus-digits mono" id="focusDigits">25:00</div>
+          <div class="focus-bar"><span id="focusBar"></span></div>
+        </div>
+        <div class="focus-controls">
+          <button class="btn btn-primary" id="focusToggle">开始专注</button>
+          <button class="btn btn-ghost" id="focusReset">重置</button>
+        </div>
+        <div class="focus-note mono">今日完成 <b id="focusDone">0</b> 轮 · 结束时自动鸣响</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ M-03 掷骰子 ============ -->
+  <div class="modal-root" id="modalDice" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-panel modal-narrow" role="dialog" aria-modal="true" aria-labelledby="diceTitle">
+      <header class="modal-head">
+        <div>
+          <div class="modal-code mono">M-03 · DICE ROLL // 掷骰子</div>
+          <h3 id="diceTitle">掷骰子</h3>
+          <p class="modal-desc">选择骰子枚数，掷出你的点数。</p>
+        </div>
+        <button class="close-btn" data-close aria-label="关闭">✕</button>
+      </header>
+      <div class="modal-body">
+        <div class="focus-presets">
+          <button class="mini-btn" data-dice="1">1 枚</button>
+          <button class="mini-btn active" data-dice="2">2 枚</button>
+          <button class="mini-btn" data-dice="3">3 枚</button>
+        </div>
+        <div class="dice-board" id="diceBoard">
+          <span class="die">1</span>
+          <span class="die">2</span>
+        </div>
+        <div class="dice-sum mono" id="diceSum">合计 · 3</div>
+        <div class="focus-controls">
+          <button class="btn btn-primary" id="diceRoll">投掷</button>
+          <span class="mono dice-count" id="diceCount">累计 0 次</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ M-04 速记板 ============ -->
+  <div class="modal-root" id="modalNote" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-panel modal-narrow" role="dialog" aria-modal="true" aria-labelledby="noteTitle">
+      <header class="modal-head">
+        <div>
+          <div class="modal-code mono">M-04 · QUICK NOTE // 速记板</div>
+          <h3 id="noteTitle">速记板</h3>
+          <p class="modal-desc">内容会即时保存到本机浏览器，关闭后也不会丢失。</p>
+        </div>
+        <button class="close-btn" data-close aria-label="关闭">✕</button>
+      </header>
+      <div class="modal-body">
+        <textarea class="note-textarea" id="noteText" placeholder="在这里写下点什么……"></textarea>
+        <div class="note-toolbar">
+          <span class="mono" id="noteStatus">已保存 · 0 字</span>
+          <button class="btn btn-ghost btn-small" id="noteClear">清空</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ M-05 时钟与秒表 ============ -->
+  <div class="modal-root" id="modalClock" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-panel modal-narrow" role="dialog" aria-modal="true" aria-labelledby="clockTitle">
+      <header class="modal-head">
+        <div>
+          <div class="modal-code mono">M-05 · CLOCK &amp; STOPWATCH // 时钟与秒表</div>
+          <h3 id="clockTitle">时钟与秒表</h3>
+          <p class="modal-desc">本地时间、当日进度，以及一枚可用的秒表。</p>
+        </div>
+        <button class="close-btn" data-close aria-label="关闭">✕</button>
+      </header>
+      <div class="modal-body">
+        <div class="clock-big">
+          <span class="clock-digits mono" id="modalClockTime">--:--:--</span>
+          <span class="clock-date mono" id="modalClockDate">----/--/--</span>
+        </div>
+        <div class="day-progress">
+          <div class="day-bar"><span id="dayBar"></span></div>
+          <span class="mono" id="dayPct">DAY PROGRESS · --%</span>
+        </div>
+        <div class="clock-big stopwatch">
+          <span class="clock-digits mono" id="stopDigits">00:00.0</span>
+          <div class="focus-controls">
+            <button class="btn btn-primary" id="stopToggle">开始</button>
+            <button class="btn btn-ghost" id="stopReset">归零</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-root" id="toastRoot" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
