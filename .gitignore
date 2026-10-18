@@ -1,15 +1,14 @@
-# 数据目录（账号、清单、文章与密码哈希，绝不能上传）
+# 本地数据与依赖
 data/
-data-test*/
-
-# 本地依赖与生成物
-_tools/
 node_modules/
+_tools/
 *.log
 _shot_*.png
 _chrome_tmp*/
+_scratch*/
 
-# 二维码与打包产物（含个人地址，按需决定是否上传）
-RHEIN-访问二维码.png
-RHEIN-访问二维码.svg
-*.zip
+# Neon / 环境变量
+.neon
+.env
+.env.local
+

@@ -12,6 +12,30 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 
 const ROOT = __dirname;
+
+/* 读取本地 .env / .env.local（Neon 的 neon deploy / neon env pull 会写入这些文件）。
+   已存在的进程环境变量优先，不会覆盖平台注入的值。
+   设置 RHINE_NO_ENV_FILE=1 可跳过（测试使用隔离环境时）。 */
+function loadEnvFiles() {
+  if (process.env.RHINE_NO_ENV_FILE === "1") return;
+  for (const name of [".env", ".env.local"]) {
+    try {
+      const text = fs.readFileSync(path.join(ROOT, name), "utf8");
+      for (const line of text.split(/\r?\n/)) {
+        const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+        if (!m) continue;
+        const key = m[1];
+        let val = m[2];
+        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+          val = val.slice(1, -1);
+        }
+        if (process.env[key] === undefined) process.env[key] = val;
+      }
+    } catch (e) { /* 文件不存在时忽略 */ }
+  }
+}
+loadEnvFiles();
+
 const DATA_DIR = process.env.RHINE_DATA || path.join(ROOT, "data");
 const DB_PATH = path.join(DATA_DIR, "db.json");
 const PORT = Number(process.env.PORT || 8000);
@@ -113,6 +137,26 @@ function syncInvitesFromDisk() {
       }
     }
   } catch (e) { /* 数据文件暂不可读时忽略 */ }
+}
+
+/* 云端模式：把 Postgres 里新增/已使用的邀请码合并进内存（多实例共用同一数据库的场景） */
+async function syncInvitesFromDb() {
+  if (!pgPool) return;
+  try {
+    const r = await pgPool.query("select data from app_state where id = $1", [STORE_ID]);
+    if (!r.rows.length) return;
+    const disk = Array.isArray(r.rows[0].data.invites) ? r.rows[0].data.invites : [];
+    const byCode = new Map(db.invites.map((i) => [i.code, i]));
+    for (const di of disk) {
+      const mem = byCode.get(di.code);
+      if (!mem) {
+        db.invites.push(di);
+      } else if (di.usedBy && !mem.usedBy) {
+        mem.usedBy = di.usedBy;
+        mem.usedAt = di.usedAt;
+      }
+    }
+  } catch (e) { /* 数据库暂不可读时忽略 */ }
 }
 
 const newId = () => crypto.randomBytes(16).toString("hex");
@@ -259,7 +303,8 @@ routes["POST api/register"] = async (req, res) => {
   if (password.length < 6 || password.length > 72) return json(res, 400, { error: "密码长度需为 6–72 位" });
   if (db.users.some((u) => u.username === username)) return json(res, 409, { error: "用户名已被占用" });
   /* 邀请制：注册必须携带有效且未使用的一次性邀请码 */
-  syncInvitesFromDisk(); // 运行期间圈主新生成的邀请码立即生效
+  if (pgPool) await syncInvitesFromDb(); // 云端模式：从 Postgres 同步新生成的码
+  else syncInvitesFromDisk(); // 本地模式：从 data/db.json 同步
   const code = normalizeInviteCode(body.inviteCode);
   if (!code) return json(res, 400, { error: "请填写邀请码（向圈主索取）" });
   /* 存储的码可能带连字符（如 9T4K-AX8G），比对时两侧都规范化 */
