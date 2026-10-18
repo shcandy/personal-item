@@ -703,8 +703,9 @@ function loadCustom(items, sourceLabel) {
    M-06 文章广场
    ============================================================ */
 const plaza = {
-  state: { list: [], filter: "all", view: "list", current: null, editingId: null }
+  state: { list: [], filter: "all", view: "list", current: null, editingId: null, comments: [] }
 };
+let plazaPoll = null;
 
 async function loadArticles() {
   if (!isAuthed()) return;
@@ -731,9 +732,10 @@ function renderPlazaList() {
     row.innerHTML =
       `<div class="a-title">${escapeHtml(a.title)}</div>
        <div class="a-meta">
-         <span class="badge ${a.isPublic ? "public" : "private"}">${a.isPublic ? "公开" : "私密"}</span>
+         <span class="badge ${a.isPublic ? "public" : "private"}">${a.isPublic ? "圈子可见" : "私密"}</span>
          <span>${escapeHtml(a.username)}</span>
          <span>${timeAgo(a.updatedAt)}</span>
+         <span>${a.commentCount || 0} 评论</span>
        </div>
        <div class="a-excerpt">${escapeHtml(a.excerpt || "")}</div>`;
     row.addEventListener("click", () => openArticle(a.id));
@@ -746,7 +748,81 @@ async function openArticle(id) {
     const data = await api("/api/articles/" + id);
     plaza.state.current = data.article;
     plaza.state.view = "read";
+    $("#commentInput").value = "";
     renderPlazaView();
+    await loadComments(id);
+  } catch (e) {
+    toast(e.message, "err");
+  }
+}
+
+/* —— 评论（登录后可用） —— */
+async function loadComments(articleId) {
+  try {
+    const data = await api(`/api/articles/${articleId}/comments`);
+    plaza.state.comments = data.comments || [];
+  } catch (e) {
+    plaza.state.comments = [];
+  }
+  renderComments();
+}
+
+function renderComments() {
+  const list = $("#commentList");
+  list.innerHTML = "";
+  const cs = plaza.state.comments || [];
+  $("#commentsLabel").textContent = `COMMENTS · 评论 ${cs.length}`;
+  $("#commentEmpty").hidden = cs.length > 0;
+  cs.forEach((c) => {
+    const li = document.createElement("div");
+    li.className = "comment-item";
+    const del = c.mine
+      ? `<button class="c-del" data-id="${escapeHtml(c.id)}">删除</button>`
+      : "";
+    li.innerHTML =
+      `<div class="c-head">
+         <span class="c-name">${escapeHtml(c.username)}</span>
+         <span>${timeAgo(c.createdAt)}</span>
+         ${del}
+       </div>
+       <div class="c-content">${escapeHtml(c.content)}</div>`;
+    if (c.mine) {
+      const btn = $(".c-del", li);
+      btn.addEventListener("click", () => {
+        armButton(btn, "再点一次确认", async () => {
+          try {
+            await api(`/api/comments/${c.id}`, { method: "DELETE" });
+            plaza.state.comments = plaza.state.comments.filter((x) => x.id !== c.id);
+            if (plaza.state.current) plaza.state.current.commentCount = Math.max(0, (plaza.state.current.commentCount || 0) - 1);
+            renderComments();
+            toast("评论已删除", "ok");
+          } catch (err) {
+            toast(err.message, "err");
+          }
+        });
+      });
+    }
+    list.appendChild(li);
+  });
+}
+
+async function sendComment() {
+  const content = $("#commentInput").value.trim();
+  if (!content) {
+    toast("评论不能为空", "err");
+    return;
+  }
+  if (!plaza.state.current) return;
+  try {
+    const data = await api(`/api/articles/${plaza.state.current.id}/comments`, {
+      method: "POST",
+      body: { content }
+    });
+    plaza.state.comments.push(data.comment);
+    if (plaza.state.current) plaza.state.current.commentCount = (plaza.state.current.commentCount || 0) + 1;
+    $("#commentInput").value = "";
+    renderComments();
+    toast("评论已发表", "ok");
   } catch (e) {
     toast(e.message, "err");
   }
@@ -763,9 +839,10 @@ function renderPlazaView() {
     const a = plaza.state.current;
     $("#readerTitle").textContent = a.title;
     $("#readerMeta").textContent =
-      `${a.isPublic ? "公开" : "私密"} · ${a.username} · ${timeAgo(a.updatedAt)} · ${a.content.length} 字`;
+      `${a.isPublic ? "圈子可见" : "私密"} · ${a.username} · ${timeAgo(a.updatedAt)} · ${a.content.length} 字 · ${a.commentCount || 0} 评论`;
     $("#readerBody").textContent = a.content;
     $("#readerActions").hidden = a.username !== auth.username;
+    renderComments();
   }
 }
 
@@ -783,7 +860,7 @@ function openEditor(article) {
 function setEditorPublic(on) {
   const sw = $("#editorPublic");
   sw.setAttribute("aria-checked", on ? "true" : "false");
-  $("#editorPublicLabel").textContent = on ? "所有人可见" : "仅自己可见";
+  $("#editorPublicLabel").textContent = on ? "圈子可见" : "仅自己可见";
 }
 
 async function saveArticle() {
@@ -1031,6 +1108,10 @@ function closeModal() {
   currentModal = null;
   document.body.style.overflow = "";
   closePopover();
+  if (plazaPoll) {
+    clearInterval(plazaPoll);
+    plazaPoll = null;
+  }
 }
 
 function openAuthFrom(name) {
@@ -1060,7 +1141,14 @@ function onModalOpened(name) {
     renderClock();
     renderStopwatch();
   }
-  if (name === "plaza") refreshPlaza();
+  if (name === "plaza") {
+    refreshPlaza();
+    /* 小圈子信息板机制：广场开启时每 10 秒静默同步一次列表 */
+    if (plazaPoll) clearInterval(plazaPoll);
+    plazaPoll = setInterval(() => {
+      if (plaza.state.view === "list" && isAuthed()) loadArticles();
+    }, 10000);
+  }
 }
 
 /* 账号弹层 */
@@ -1085,6 +1173,8 @@ function resetAuthForm() {
   $("#authSub").textContent = "登录后，清单与文章将随账号同步。";
   $("#authSubmit").textContent = "登录";
   $("#authSwitch").textContent = "立即注册";
+  $("#authInviteBox").hidden = true;
+  $("#authInvite").value = "";
   $("#authError").hidden = true;
   $("#authError").textContent = "";
 }
@@ -1092,14 +1182,16 @@ function setAuthMode(mode) {
   authMode = mode;
   if (mode === "register") {
     $("#authTitle").textContent = "创建账号";
-    $("#authSub").textContent = "注册后，清单与文章将随账号同步。";
+    $("#authSub").textContent = "站点为邀请制：注册需要一次性邀请码，可向圈主索取。";
     $("#authSubmit").textContent = "注册";
     $("#authSwitch").textContent = "已有账号？去登录";
+    $("#authInviteBox").hidden = false;
   } else {
     $("#authTitle").textContent = "登录";
     $("#authSub").textContent = "登录后，清单与文章将随账号同步。";
     $("#authSubmit").textContent = "登录";
     $("#authSwitch").textContent = "立即注册";
+    $("#authInviteBox").hidden = true;
   }
 }
 async function submitAuth() {
@@ -1116,11 +1208,22 @@ async function submitAuth() {
     errEl.hidden = false;
     return;
   }
+  let inviteCode = "";
+  if (authMode === "register") {
+    inviteCode = $("#authInvite").value.trim();
+    if (!inviteCode) {
+      errEl.textContent = "请填写邀请码（向圈主索取）";
+      errEl.hidden = false;
+      return;
+    }
+  }
   errEl.hidden = true;
   $("#authSubmit").disabled = true;
   try {
     const path = authMode === "register" ? "/api/register" : "/api/login";
-    const data = await api(path, { method: "POST", body: { username, password } });
+    const payload = { username, password };
+    if (authMode === "register") payload.inviteCode = inviteCode;
+    const data = await api(path, { method: "POST", body: payload });
     setAuth(data.token, data.username);
     toast(authMode === "register" ? `欢迎，${data.username}！` : `欢迎回来，${data.username}`, "ok");
     $("#authUser").value = "";
@@ -1437,6 +1540,10 @@ document.addEventListener("DOMContentLoaded", () => {
     setEditorPublic(on);
   });
   $("#editorSave").addEventListener("click", saveArticle);
+  $("#commentSend").addEventListener("click", sendComment);
+  $("#commentInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") sendComment();
+  });
   $("#editArticleBtn").addEventListener("click", () => {
     if (plaza.state.current) openEditor(plaza.state.current);
   });

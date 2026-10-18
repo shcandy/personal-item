@@ -1062,6 +1062,63 @@ body {
 .editor-actions { display: flex; align-items: center; gap: 10px; justify-content: flex-end; }
 .editor-status { font-size: 12.5px; color: var(--ink3); margin-right: auto; }
 
+/* 评论区 */
+.comments-sec {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.comment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.comment-item {
+  background: rgba(0, 0, 0, 0.035);
+  border-radius: 12px;
+  padding: 10px 14px;
+  animation: fadeIn 0.2s ease;
+}
+.comment-item .c-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--ink3);
+}
+.comment-item .c-name { font-weight: 600; color: var(--ink2); }
+.comment-item .c-content {
+  margin-top: 5px;
+  font-size: 14.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.comment-item .c-del {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--ink3);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-family: var(--sans);
+}
+.comment-item .c-del:hover { color: var(--red); background: rgba(255, 59, 48, 0.08); }
+.comment-item .c-del.confirming { background: var(--red); color: #fff; }
+.comment-empty {
+  color: var(--ink3);
+  font-size: 13.5px;
+  padding: 14px 2px 4px;
+}
+.comment-form { display: flex; gap: 10px; margin-top: 14px; }
+.comment-form .text-input { flex: 1; }
+
 /* 登录 */
 .auth-error {
   margin-top: 12px;

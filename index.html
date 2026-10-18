@@ -171,7 +171,7 @@
             <div>
               <div class="module-code mono">M-06 · ARTICLE PLAZA</div>
               <h3 class="module-name">文章广场</h3>
-              <p class="module-desc">写下你的文字，选择公开或只留给自己。未登录时，一切皆私密。</p>
+              <p class="module-desc">写下你的文字，圈子可见或只留给自己。未登录时，一切皆私密。</p>
             </div>
             <span class="status-dot" title="就绪"></span>
           </div>
@@ -499,7 +499,7 @@
         <div>
           <div class="modal-code mono">M-06 · ARTICLE PLAZA</div>
           <h3 id="plazaTitle">文章广场</h3>
-          <p class="modal-desc">写下文字，选择公开或私密。未登录时，所有文章均为私密。</p>
+          <p class="modal-desc">写下文字，选择圈子可见或仅自己可见。未登录时，所有文章均为私密。</p>
         </div>
         <button class="close-btn" data-close aria-label="关闭">✕</button>
       </header>
@@ -511,7 +511,7 @@
             <svg viewBox="0 0 24 24" width="34" height="34"><rect x="5" y="10" width="14" height="10" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
           </div>
           <p class="lock-title">登录后即可阅读与写作</p>
-          <p class="lock-sub">未登录时，所有文章均为私密，不对外展示。</p>
+          <p class="lock-sub">站点为邀请制，注册需向圈主索取邀请码。未登录时，所有文章均为私密。</p>
           <button class="btn primary" data-open-auth>登录 / 注册</button>
         </div>
 
@@ -538,6 +538,15 @@
             <button class="btn ghost small danger-text" id="deleteArticleBtn">删除</button>
           </div>
           <article class="reader-body" id="readerBody"></article>
+          <section class="comments-sec">
+            <div class="stage-label mono" id="commentsLabel">COMMENTS · 评论 0</div>
+            <div class="comment-list" id="commentList"></div>
+            <div class="comment-empty" id="commentEmpty" hidden>还没有评论，来说两句吧。</div>
+            <div class="comment-form">
+              <input class="text-input" id="commentInput" placeholder="写下你的评论…" maxlength="2000" />
+              <button class="btn primary small" id="commentSend">发表</button>
+            </div>
+          </section>
         </div>
 
         <!-- 写作 -->
@@ -545,7 +554,7 @@
           <button class="back-link" id="editorBack">‹ 返回</button>
           <input class="text-input title-input" id="editorTitle" placeholder="标题" maxlength="100" />
           <div class="editor-privacy">
-            <span>公开</span>
+            <span>可见范围</span>
             <button class="switch" id="editorPublic" role="switch" aria-checked="false"><span class="knob"></span></button>
             <span class="mono switch-label" id="editorPublicLabel">仅自己可见</span>
           </div>
@@ -577,6 +586,10 @@
         <input class="text-input" id="authUser" placeholder="2–20 位字母、数字或中文" maxlength="20" autocomplete="username" />
         <label class="field-label">密码</label>
         <input class="text-input" id="authPass" type="password" placeholder="至少 6 位" maxlength="72" autocomplete="current-password" />
+        <div class="auth-invite" id="authInviteBox" hidden>
+          <label class="field-label">邀请码</label>
+          <input class="text-input" id="authInvite" placeholder="向圈主索取的一次性邀请码" maxlength="20" autocomplete="off" />
+        </div>
         <div class="auth-error" id="authError" hidden></div>
         <button class="btn primary block" id="authSubmit">登录</button>
         <div class="auth-switch">

@@ -1,0 +1,9 @@
+# Render 蓝图：连接仓库后 Render 会自动按此配置创建服务
+services:
+  - type: web
+    name: rhine-terminal
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /api/health

@@ -18,13 +18,22 @@ const PORT = Number(process.env.PORT || 8000);
 const SESSION_TTL = 30 * 24 * 3600 * 1000; // 30 天
 
 /* ---------- 数据层 ---------- */
-let db = { users: [], sheets: [], articles: [], sessions: [] };
+let db = { users: [], sheets: [], articles: [], sessions: [], invites: [], comments: [] };
 
 function loadDb() {
   try {
-    db = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
+    const raw = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
+    /* 旧数据兼容：缺失的集合补为空数组 */
+    db = {
+      users: Array.isArray(raw.users) ? raw.users : [],
+      sheets: Array.isArray(raw.sheets) ? raw.sheets : [],
+      articles: Array.isArray(raw.articles) ? raw.articles : [],
+      sessions: Array.isArray(raw.sessions) ? raw.sessions : [],
+      invites: Array.isArray(raw.invites) ? raw.invites : [],
+      comments: Array.isArray(raw.comments) ? raw.comments : []
+    };
   } catch {
-    db = { users: [], sheets: [], articles: [], sessions: [] };
+    db = { users: [], sheets: [], articles: [], sessions: [], invites: [], comments: [] };
   }
 }
 
@@ -40,6 +49,17 @@ const newToken = () => crypto.randomBytes(32).toString("hex");
 const hashPassword = (pw, salt) => crypto.scryptSync(pw, salt, 64).toString("hex");
 const safeEqual = (a, b) =>
   a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+
+/* 一次性邀请码：8 位，去掉了易混淆字符 */
+const INVITE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+function generateInviteCode() {
+  const part = (n) =>
+    Array.from({ length: n }, () => INVITE_ALPHABET[crypto.randomInt(INVITE_ALPHABET.length)]).join("");
+  return part(4) + "-" + part(4);
+}
+function normalizeInviteCode(s) {
+  return String(s || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
 
 /* ---------- HTTP 小工具 ---------- */
 function json(res, code, obj) {
@@ -120,6 +140,7 @@ function articleSummary(a, withContent) {
     title: a.title,
     username: a.username,
     isPublic: a.isPublic,
+    commentCount: db.comments.filter((c) => c.articleId === a.id).length,
     createdAt: a.createdAt,
     updatedAt: a.updatedAt
   };
@@ -166,9 +187,16 @@ routes["POST api/register"] = async (req, res) => {
   if (!RE_USERNAME.test(username)) return json(res, 400, { error: "用户名需为 2–20 位字母、数字、中文、下划线或连字符" });
   if (password.length < 6 || password.length > 72) return json(res, 400, { error: "密码长度需为 6–72 位" });
   if (db.users.some((u) => u.username === username)) return json(res, 409, { error: "用户名已被占用" });
+  /* 邀请制：注册必须携带有效且未使用的一次性邀请码 */
+  const code = normalizeInviteCode(body.inviteCode);
+  if (!code) return json(res, 400, { error: "请填写邀请码（向圈主索取）" });
+  const invite = db.invites.find((x) => x.code === code);
+  if (!invite || invite.usedBy) return json(res, 403, { error: "邀请码无效或已被使用" });
   const salt = crypto.randomBytes(16).toString("hex");
   const user = { id: newId(), username, salt, hash: hashPassword(password, salt), createdAt: Date.now() };
   db.users.push(user);
+  invite.usedBy = user.id;
+  invite.usedAt = Date.now();
   const token = newToken();
   db.sessions.push({ token, userId: user.id, expires: Date.now() + SESSION_TTL });
   saveDb();
@@ -349,6 +377,53 @@ routes["DELETE api/articles/:id"] = (req, res, url, parts) => {
   if (!art) return json(res, 404, { error: "文章不存在" });
   if (art.owner !== a.user.id) return json(res, 403, { error: "只能删除自己的文章" });
   db.articles = db.articles.filter((x) => x !== art);
+  db.comments = db.comments.filter((c) => c.articleId !== art.id);
+  saveDb();
+  json(res, 200, { ok: true });
+};
+
+/* —— 评论（登录后可用；权限随文章：他人私密文章不可见也不可评） —— */
+function commentSummary(c, viewerId) {
+  return {
+    id: c.id,
+    username: c.username,
+    content: c.content,
+    createdAt: c.createdAt,
+    mine: c.userId === viewerId
+  };
+}
+
+routes["GET api/articles/:id/comments"] = (req, res, url, parts) => {
+  const art = findArticle(req, res, parts[2]);
+  if (!art) return;
+  const a = getSession(req);
+  const list = db.comments
+    .filter((c) => c.articleId === art.id)
+    .sort((x, y) => x.createdAt - y.createdAt)
+    .map((c) => commentSummary(c, a.user.id));
+  json(res, 200, { comments: list });
+};
+
+routes["POST api/articles/:id/comments"] = async (req, res, url, parts) => {
+  const art = findArticle(req, res, parts[2]);
+  if (!art) return;
+  const a = getSession(req);
+  const body = await readBody(req);
+  const content = String(body.content || "").trim();
+  if (!content || content.length > 2000) return json(res, 400, { error: "评论需为 1–2000 字" });
+  const c = { id: newId(), articleId: art.id, userId: a.user.id, username: a.user.username, content, createdAt: Date.now() };
+  db.comments.push(c);
+  saveDb();
+  json(res, 200, { comment: commentSummary(c, a.user.id) });
+};
+
+routes["DELETE api/comments/:id"] = (req, res, url, parts) => {
+  const a = requireAuth(req, res);
+  if (!a) return;
+  const c = db.comments.find((x) => x.id === parts[2]);
+  if (!c) return json(res, 404, { error: "评论不存在" });
+  if (c.userId !== a.user.id) return json(res, 403, { error: "只能删除自己的评论" });
+  db.comments = db.comments.filter((x) => x !== c);
   saveDb();
   json(res, 200, { ok: true });
 };
@@ -390,6 +465,36 @@ function serveStatic(req, res, pathname) {
 
 /* ---------- 主服务 ---------- */
 loadDb();
+
+/* 圈主命令行工具（不启动服务，执行后退出） */
+const cliArgs = process.argv.slice(2);
+if (cliArgs[0] === "--invite") {
+  const n = Math.max(1, Math.min(200, parseInt(cliArgs[1], 10) || 3));
+  const codes = [];
+  for (let i = 0; i < n; i++) {
+    const code = generateInviteCode();
+    db.invites.push({ code, usedBy: null, usedAt: null, createdAt: Date.now() });
+    codes.push(code);
+  }
+  saveDb();
+  console.log("已生成 " + n + " 个一次性邀请码（每个只能注册一个账号）：");
+  codes.forEach((c) => console.log("  " + c));
+  process.exit(0);
+}
+if (cliArgs[0] === "--users") {
+  if (!db.users.length) {
+    console.log("还没有注册用户。");
+  } else {
+    console.log("注册用户（" + db.users.length + " 人）：");
+    db.users.forEach((u) =>
+      console.log("  " + u.username + "\t" + new Date(u.createdAt).toLocaleString("zh-CN"))
+    );
+  }
+  const unused = db.invites.filter((i) => !i.usedBy).length;
+  console.log("剩余可用邀请码：" + unused + " 个");
+  process.exit(0);
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://localhost");
   if (url.pathname.startsWith("/api/")) return handleApi(req, res, url);
