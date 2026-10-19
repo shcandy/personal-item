@@ -1776,3 +1776,61 @@ body.has-wallpaper {
 @media (max-width: 600px) {
   .card.shape-square, .card.shape-wide { grid-column: span 12; aspect-ratio: auto; }
 }
+
+/* ---------- 版本与更新日志（只读） ---------- */
+.version-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.version-now { font-size: 24px; font-weight: 700; color: var(--ink); letter-spacing: -0.01em; }
+.version-build { font-size: 12px; color: var(--ink3); }
+.version-note {
+  font-size: 12.5px;
+  color: var(--ink3);
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+.version-note code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 1px 5px;
+  border-radius: 5px;
+}
+html[data-theme="dark"] .version-note code { background: rgba(255, 255, 255, 0.1); }
+.changelog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 52vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.log-entry {
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid var(--line-soft);
+}
+html[data-theme="dark"] .log-entry { background: rgba(255, 255, 255, 0.05); }
+.log-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.log-ver { font-size: 13px; font-weight: 700; color: var(--blue); }
+.log-title { font-size: 14px; font-weight: 600; color: var(--ink); }
+.log-date { font-size: 11.5px; color: var(--ink3); margin-left: auto; }
+.log-items {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.log-items li { font-size: 13px; color: var(--ink2); line-height: 1.65; }

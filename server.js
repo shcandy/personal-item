@@ -41,6 +41,22 @@ const DB_PATH = path.join(DATA_DIR, "db.json");
 const PORT = Number(process.env.PORT || 8000);
 const SESSION_TTL = 30 * 24 * 3600 * 1000; // 30 天
 
+/* ---------- 版本信息（只读，来自仓库 version.json） ---------- */
+function loadVersionInfo() {
+  try {
+    const raw = fs.readFileSync(path.join(ROOT, "version.json"), "utf8");
+    const info = JSON.parse(raw);
+    return {
+      version: String(info.version || "0.0.0"),
+      build: String(info.build || ""),
+      changelog: Array.isArray(info.changelog) ? info.changelog : []
+    };
+  } catch (e) {
+    return { version: "0.0.0", build: "", changelog: [] };
+  }
+}
+const VERSION_INFO = loadVersionInfo();
+
 /* ---------- 数据层 ---------- */
 const DATABASE_URL = process.env.DATABASE_URL || "";
 const STORE_ID = "rhein-terminal";
@@ -413,17 +429,18 @@ routes["GET api/admin/users"] = (req, res) => {
 routes["GET api/admin/settings"] = (req, res) => {
   const a = requireAdmin(req, res);
   if (!a) return;
-  json(res, 200, { settings: db.settings });
+  json(res, 200, { settings: db.settings, version: { version: VERSION_INFO.version, build: VERSION_INFO.build } });
 };
 
 routes["PUT api/admin/settings"] = async (req, res) => {
   const a = requireAdmin(req, res);
   if (!a) return;
   const body = await readBody(req);
-  const fields = ["siteName", "heroTitle", "heroSub", "footerText", "announcement", "version", "updates"];
+  /* 版本号与更新日志是只读的（来自 version.json），不在这里修改 */
+  const fields = ["siteName", "heroTitle", "heroSub", "footerText", "announcement"];
   for (const k of fields) {
     if (typeof body[k] === "string") {
-      const max = (k === "heroTitle" || k === "heroSub" || k === "updates" || k === "announcement") ? 2000 : 200;
+      const max = (k === "heroTitle" || k === "heroSub" || k === "announcement") ? 2000 : 200;
       db.settings[k] = body[k].slice(0, max);
     }
   }
@@ -433,14 +450,25 @@ routes["PUT api/admin/settings"] = async (req, res) => {
 
 /* 公开站点设置（首页渲染用，不含敏感信息） */
 routes["GET api/settings"] = (req, res) => {
+  const latest = VERSION_INFO.changelog[0];
   json(res, 200, {
     siteName: db.settings.siteName,
     heroTitle: db.settings.heroTitle,
     heroSub: db.settings.heroSub,
     footerText: db.settings.footerText,
     announcement: db.settings.announcement,
-    version: db.settings.version,
-    updates: db.settings.updates
+    version: VERSION_INFO.version,
+    build: VERSION_INFO.build,
+    updates: latest ? (latest.title || (latest.items || [])[0] || "") : ""
+  });
+};
+
+/* 版本与更新日志（只读，来自仓库 version.json） */
+routes["GET api/version"] = (req, res) => {
+  json(res, 200, {
+    version: VERSION_INFO.version,
+    build: VERSION_INFO.build,
+    changelog: VERSION_INFO.changelog
   });
 };
 

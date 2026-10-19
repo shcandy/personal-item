@@ -1,12 +1,12 @@
 {
   "name": "rhine-terminal",
-  "version": "2.3.0",
+  "version": "3.0.0",
   "private": true,
   "description": "苹果简约风模块工具台：随机选择器、云端清单、文章广场",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "build": "node --check server.js && node --check app.js && node --check make_qr.mjs && node --check migrate-to-cloud.mjs",
+    "build": "node --check server.js && node --check app.js && node --check make_qr.mjs && node --check migrate-to-cloud.mjs && node -e \"JSON.parse(require('fs').readFileSync('version.json','utf8'))\"",
     "test": "node test.mjs && node server.test.mjs"
   },
   "dependencies": {

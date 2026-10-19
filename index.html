@@ -710,7 +710,7 @@
         <div class="tabs">
           <button class="tab active" data-admintab="users">成员</button>
           <button class="tab" data-admintab="text">界面文字</button>
-          <button class="tab" data-admintab="log">开发日志</button>
+          <button class="tab" data-admintab="log">版本与更新日志</button>
         </div>
         <section class="admin-pane" data-adminpane="users">
           <div class="admin-user-list" id="adminUserList"></div>
@@ -729,11 +729,12 @@
           <button class="btn primary block" id="saveTextSettings">保存界面文字</button>
         </section>
         <section class="admin-pane" data-adminpane="log" hidden>
-          <label class="field-label">版本号</label>
-          <input class="text-input" id="setVersion" maxlength="40" />
-          <label class="field-label">更新说明（显示在首页版本角标提示里）</label>
-          <textarea class="text-area" id="setUpdates" rows="4"></textarea>
-          <button class="btn primary block" id="saveLogSettings">保存开发日志</button>
+          <div class="version-head">
+            <span class="version-now mono" id="adminVersionNow">v—</span>
+            <span class="version-build mono" id="adminBuildDate"></span>
+          </div>
+          <p class="version-note">版本号与更新日志来自仓库的 <code>version.json</code>，随发版自动更新，不可在此手动修改。</p>
+          <div class="changelog" id="adminChangelog"></div>
         </section>
       </div>
     </div>

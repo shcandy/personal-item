@@ -409,24 +409,53 @@ function applySiteSettings(s) {
       ann.hidden = true;
     }
   }
+}
+
+/* 版本信息：只读，来自仓库 version.json；发版时更新该文件即可自动生效 */
+let versionInfo = null;
+async function loadVersionInfo() {
+  try {
+    const res = await fetch("version.json", { cache: "no-store" });
+    if (res && res.ok) {
+      const info = await res.json();
+      if (info && info.version) versionInfo = info;
+    }
+  } catch (e) { /* 离线或静态环境忽略 */ }
+  if (!versionInfo) versionInfo = { version: "0.0.0", build: "", changelog: [] };
+  applyVersionBadge();
+  return versionInfo;
+}
+function latestChange() {
+  return (versionInfo && Array.isArray(versionInfo.changelog) && versionInfo.changelog[0]) || null;
+}
+function applyVersionBadge() {
   const badge = $("#versionBadge");
-  if (badge) {
-    badge.textContent = "v" + (s.version || "2.3.0");
-    badge.title = s.updates ? `更新说明：${s.updates}` : "点击查看更新说明";
-  }
+  if (!badge || !versionInfo) return;
+  badge.textContent = "v" + versionInfo.version;
+  const latest = latestChange();
+  badge.title = latest ? `更新说明：${latest.title || ""}` : "点击查看更新信息";
 }
 
 async function loadSiteSettings() {
   try {
     const s = await api("/api/settings");
     applySiteSettings(s);
-    const seen = store.get("rhine.seenVersion", "");
-    if (s.version && s.version !== seen) {
-      store.set("rhine.seenVersion", s.version);
-      const msg = s.updates ? `已更新到 v${s.version}：${s.updates}` : `已更新到 v${s.version}`;
-      setTimeout(() => toast(msg, "ok"), 600);
-    }
   } catch (e) { /* 离线时保留默认文案 */ }
+  await loadVersionInfo();
+  checkVersionNotice();
+}
+
+function checkVersionNotice() {
+  if (!versionInfo) return;
+  const seen = store.get("rhine.seenVersion", "");
+  if (versionInfo.version && versionInfo.version !== seen) {
+    store.set("rhine.seenVersion", versionInfo.version);
+    const latest = latestChange();
+    const msg = latest
+      ? `已更新到 v${versionInfo.version}：${latest.title || ""}`
+      : `已更新到 v${versionInfo.version}`;
+    setTimeout(() => toast(msg, "ok"), 600);
+  }
 }
 
 function toggleAdminMode() {
@@ -439,6 +468,7 @@ function toggleAdminMode() {
 async function loadAdminConsole() {
   if (!auth.isAdmin) return;
   try {
+    await loadVersionInfo();
     const [usersRes, settingsRes] = await Promise.all([
       api("/api/admin/users"),
       api("/api/admin/settings")
@@ -450,11 +480,57 @@ async function loadAdminConsole() {
     $("#setHeroSub").value = st.heroSub || "";
     $("#setFooterText").value = st.footerText || "";
     $("#setAnnouncement").value = st.announcement || "";
-    $("#setVersion").value = st.version || "";
-    $("#setUpdates").value = st.updates || "";
+    renderAdminChangelog();
   } catch (e) {
     toast(e.message, "err");
   }
+}
+
+/* 只读更新日志：按版本倒序渲染 */
+function renderAdminChangelog() {
+  const now = $("#adminVersionNow");
+  const build = $("#adminBuildDate");
+  if (now) now.textContent = "v" + (versionInfo ? versionInfo.version : "—");
+  if (build) build.textContent = versionInfo && versionInfo.build ? "构建于 " + versionInfo.build : "";
+  const list = $("#adminChangelog");
+  if (!list) return;
+  list.innerHTML = "";
+  const entries = (versionInfo && versionInfo.changelog) || [];
+  if (!entries.length) {
+    const empty = document.createElement("p");
+    empty.className = "avatar-hint";
+    empty.textContent = "暂无更新日志。";
+    list.appendChild(empty);
+    return;
+  }
+  entries.forEach((entry) => {
+    const item = document.createElement("div");
+    item.className = "log-entry";
+    const head = document.createElement("div");
+    head.className = "log-head";
+    const ver = document.createElement("span");
+    ver.className = "log-ver mono";
+    ver.textContent = "v" + entry.version;
+    const title = document.createElement("span");
+    title.className = "log-title";
+    title.textContent = entry.title || "";
+    const date = document.createElement("span");
+    date.className = "log-date mono";
+    date.textContent = entry.date || "";
+    head.appendChild(ver);
+    head.appendChild(title);
+    head.appendChild(date);
+    const ul = document.createElement("ul");
+    ul.className = "log-items";
+    (entry.items || []).forEach((t) => {
+      const li = document.createElement("li");
+      li.textContent = t;
+      ul.appendChild(li);
+    });
+    item.appendChild(head);
+    item.appendChild(ul);
+    list.appendChild(item);
+  });
 }
 
 function renderAdminUsers(users) {
@@ -2165,14 +2241,9 @@ document.addEventListener("DOMContentLoaded", () => {
       announcement: $("#setAnnouncement").value
     });
   });
-  $("#saveLogSettings").addEventListener("click", () => {
-    saveAdminSettings({
-      version: $("#setVersion").value,
-      updates: $("#setUpdates").value
-    });
-  });
   $("#versionBadge").addEventListener("click", () => {
-    if (siteSettings && siteSettings.updates) toast(`v${siteSettings.version || ""} · ${siteSettings.updates}`, "");
+    const latest = latestChange();
+    if (latest) toast(`v${versionInfo.version} · ${latest.title || ""}`, "");
     else openSettings();
   });
   document.addEventListener("click", (e) => {
