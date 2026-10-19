@@ -970,6 +970,43 @@ let presetSel = new Set(store.get("rhine.presetSel", null) || FOOD_PRESETS.map((
 let tempItems = store.get("rhine.tempItems", []);
 let history = store.get("rhine.history", []);
 
+/* —— 外卖商品名（由本机爬虫推送到站点） —— */
+let waimaiItems = [];
+let waimaiMeta = { source: "", updatedAt: 0 };
+
+async function loadWaimai() {
+  try {
+    const data = await api("/api/waimai");
+    waimaiItems = Array.isArray(data.items) ? data.items : [];
+    waimaiMeta = { source: data.source || "", updatedAt: data.updatedAt || 0 };
+  } catch (e) {
+    waimaiItems = [];
+    waimaiMeta = { source: "", updatedAt: 0 };
+  }
+  renderWaimaiPool();
+  refreshPoolUI();
+}
+
+function renderWaimaiPool() {
+  const wrap = $("#waimaiPool");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  waimaiItems.forEach((name) => {
+    const chip = document.createElement("span");
+    chip.className = "item-chip on";
+    chip.innerHTML = `<span class="tick">✓</span><span class="chip-name">${escapeHtml(name)}</span>`;
+    wrap.appendChild(chip);
+  });
+  const count = $("#waimaiCount");
+  if (count) count.textContent = waimaiItems.length + " 项";
+  const status = $("#waimaiStatus");
+  if (status) {
+    status.textContent = waimaiItems.length
+      ? `${waimaiMeta.source || "已同步"} · ${new Date(waimaiMeta.updatedAt).toLocaleString("zh-CN")}`
+      : "暂无数据 · 运行爬虫并推送后点「同步」";
+  }
+}
+
 const sheets = {
   state: { list: [], activeId: null, items: [] }
 };
@@ -1172,6 +1209,9 @@ function activePool() {
   }
   if (picker.tab === "sheets") {
     return sheets.state.items.slice();
+  }
+  if (picker.tab === "waimai") {
+    return waimaiItems.slice();
   }
   return tempItems.slice();
 }
@@ -2844,9 +2884,11 @@ document.addEventListener("DOMContentLoaded", () => {
       $$(".tabpane").forEach((p) =>
         p.classList.toggle("active", p.dataset.pane === picker.tab)
       );
+      if (picker.tab === "waimai") loadWaimai();
       refreshPoolUI();
     })
   );
+  $("#waimaiRefresh").addEventListener("click", () => loadWaimai());
 
   $("#presetSelectAll").addEventListener("click", () => {
     FOOD_PRESETS.filter((f) => picker.catFilter === "all" || f.cat === picker.catFilter)

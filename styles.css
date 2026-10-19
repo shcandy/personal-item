@@ -2126,3 +2126,16 @@ html[data-theme="dark"] .g2048-cell { background: rgba(255, 255, 255, 0.08); }
 .chess-cell.sel { box-shadow: inset 0 0 0 3px #0071e3; }
 .chess-cell.move { box-shadow: inset 0 0 0 3px rgba(0, 168, 90, 0.85); }
 .chess-cell:hover { filter: brightness(1.06); }
+
+/* ---------- 外卖商品面板 ---------- */
+.waimai-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 12.5px;
+  color: var(--ink3);
+  flex-wrap: wrap;
+}
+.waimai-tip { font-size: 11px; color: var(--ink3); }

@@ -91,6 +91,26 @@ node server.js --make-admin 名字    # 把某个账号设为管理员
 
 全屏弹窗、单列卡片、安全区留白、触控友好的按钮尺寸，480px 以下还有更紧凑的顶栏与排版。
 
+### 外卖商品（爬虫 → 随机选择器）
+
+随机选择器提供「外卖商品」来源：由本机爬虫抓取淘宝闪购等店铺的商品名，推送到站点后即可直接抽取。
+
+```bash
+# 1. 安装依赖（仅需一次）
+python -m pip install -r tools/requirements.txt
+python -m playwright install chromium
+
+# 2. 抓取并把商品名推送到线上站点（运行时会提示扫码登录）
+python tools/taobao_scraper.py --url "店铺链接" \
+  --export-names output/waimai \
+  --push-url https://rhine-terminal.onrender.com \
+  --push-user 你的用户名 --push-pass 你的密码
+```
+
+推送成功后，网站「随机选择器 → 外卖商品 → 同步」即可看到。也可以只用 `--export-names` 导出 txt / json，再走「临时导入」。
+
+> 合规提示：请遵守目标平台的服务协议与当地法律法规，控制抓取频率，仅用于个人学习与价格参考，不要批量转载或商用。
+
 ## 快速开始
 
 ```bash
@@ -142,6 +162,7 @@ node server.js
 | GET | `/api/admin/users` | 成员列表（仅管理员） |
 | GET / PUT | `/api/admin/settings` | 站点文字（仅管理员） |
 | GET | `/api/version` | 版本号、构建日期与完整更新日志（只读） |
+| GET / PUT / DELETE | `/api/waimai` | 外卖商品名（管理员推送，所有人读取） |
 | GET / POST | `/api/sheets` | 清单列表 / 新建 |
 | GET / PUT / DELETE | `/api/sheets/:id` | 清单读取 / 更新 / 删除（仅本人） |
 | GET / POST | `/api/articles` | 文章列表（圈子可见 + 本人私密）/ 发布 |
@@ -160,6 +181,8 @@ personal-item/
 ├── render.yaml         # Render Blueprint
 ├── migrate-to-cloud.mjs# 本地数据迁移到 Postgres
 ├── make_qr.mjs         # 生成访问二维码
+├── version.json        # 版本号与更新日志（只读，发版时更新）
+├── tools/              # 本机爬虫（淘宝闪购商品名）与依赖
 ├── test.mjs            # 前端测试（jsdom）
 ├── server.test.mjs     # 后端测试（真实服务 + 独立数据目录）
 └── data/db.json        # 本地数据（默认，已被 gitignore）
@@ -168,8 +191,8 @@ personal-item/
 ## 测试与构建
 
 ```bash
-npm test          # 前端 124 项 + 后端 69 项
-npm run build     # 语法检查（server.js / app.js / 脚本）
+npm test          # 前端 164 项 + 后端 74 项
+npm run build     # 语法检查（server.js / app.js / 脚本 / version.json）
 ```
 
 ## 安全说明

@@ -279,6 +279,7 @@
           <button class="tab active" data-tab="preset" role="tab" aria-selected="true">内置预设</button>
           <button class="tab" data-tab="sheets" role="tab" aria-selected="false">我的清单</button>
           <button class="tab" data-tab="import" role="tab" aria-selected="false">临时导入</button>
+          <button class="tab" data-tab="waimai" role="tab" aria-selected="false">外卖商品</button>
         </div>
 
         <!-- 预设面板 -->
@@ -370,6 +371,21 @@
             <div class="sheet-form-actions">
               <button class="btn primary small" id="saveSheetConfirm">保存到云端</button>
               <button class="btn ghost small" id="saveSheetCancel">取消</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 外卖商品面板（爬虫推送） -->
+        <section class="tabpane" data-pane="waimai">
+          <div class="waimai-head">
+            <span class="mono" id="waimaiStatus">暂无数据 · 运行爬虫并推送后点「同步」</span>
+            <button class="mini-btn" id="waimaiRefresh" type="button">↻ 同步</button>
+          </div>
+          <div class="chip-grid" id="waimaiPool"></div>
+          <div class="pool-toolbar">
+            <span class="pool-count mono" id="waimaiCount">0 项</span>
+            <div class="toolbar-btns">
+              <span class="mono waimai-tip">来自淘宝闪购等外卖平台</span>
             </div>
           </div>
         </section>

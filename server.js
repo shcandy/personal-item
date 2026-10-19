@@ -73,7 +73,7 @@ const DEFAULT_SETTINGS = {
   updates: "修复已知问题，新增管理员模式、个性化壁纸、界面文字编辑。"
 };
 
-const emptyDb = () => ({ users: [], sheets: [], articles: [], sessions: [], invites: [], comments: [], settings: { ...DEFAULT_SETTINGS } });
+const emptyDb = () => ({ users: [], sheets: [], articles: [], sessions: [], invites: [], comments: [], settings: { ...DEFAULT_SETTINGS }, waimai: { source: "", updatedAt: 0, items: [] } });
 
 function normalizeDb(raw) {
   return {
@@ -83,7 +83,12 @@ function normalizeDb(raw) {
     sessions: Array.isArray(raw.sessions) ? raw.sessions : [],
     invites: Array.isArray(raw.invites) ? raw.invites : [],
     comments: Array.isArray(raw.comments) ? raw.comments : [],
-    settings: { ...DEFAULT_SETTINGS, ...(raw.settings || {}) }
+    settings: { ...DEFAULT_SETTINGS, ...(raw.settings || {}) },
+    waimai: {
+      source: String((raw.waimai && raw.waimai.source) || ""),
+      updatedAt: Number((raw.waimai && raw.waimai.updatedAt) || 0),
+      items: Array.isArray(raw.waimai && raw.waimai.items) ? raw.waimai.items : []
+    }
   };
 }
 
@@ -470,6 +475,48 @@ routes["GET api/version"] = (req, res) => {
     build: VERSION_INFO.build,
     changelog: VERSION_INFO.changelog
   });
+};
+
+/* —— 外卖商品名（爬虫推送，管理员写入 / 所有人读取） —— */
+routes["GET api/waimai"] = (req, res) => {
+  json(res, 200, {
+    source: db.waimai.source || "",
+    updatedAt: db.waimai.updatedAt || 0,
+    items: db.waimai.items || []
+  });
+};
+
+routes["PUT api/waimai"] = async (req, res) => {
+  const a = requireAdmin(req, res);
+  if (!a) return;
+  const body = await readBody(req);
+  const raw = Array.isArray(body.items) ? body.items : [];
+  const seen = new Set();
+  const items = [];
+  raw.forEach((x) => {
+    const name = String(x || "").replace(/\s+/g, " ").trim().slice(0, 60);
+    if (!name) return;
+    const key = name.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    items.push(name);
+  });
+  if (!items.length) return json(res, 400, { error: "商品名不能为空" });
+  db.waimai = {
+    source: String(body.source || "manual").slice(0, 40),
+    updatedAt: Date.now(),
+    items: items.slice(0, 500)
+  };
+  saveDb();
+  json(res, 200, { source: db.waimai.source, updatedAt: db.waimai.updatedAt, count: db.waimai.items.length });
+};
+
+routes["DELETE api/waimai"] = (req, res) => {
+  const a = requireAdmin(req, res);
+  if (!a) return;
+  db.waimai = { source: "", updatedAt: Date.now(), items: [] };
+  saveDb();
+  json(res, 200, { ok: true });
 };
 
 /* —— 云端清单（sheet） —— */
