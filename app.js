@@ -472,9 +472,10 @@ async function loadAdminConsole() {
   if (!auth.isAdmin) return;
   try {
     await loadVersionInfo();
-    const [usersRes, settingsRes] = await Promise.all([
+    const [usersRes, settingsRes, invitesRes] = await Promise.all([
       api("/api/admin/users"),
-      api("/api/admin/settings")
+      api("/api/admin/settings"),
+      api("/api/admin/invites")
     ]);
     renderAdminUsers(usersRes.users || []);
     const st = settingsRes.settings || {};
@@ -484,6 +485,7 @@ async function loadAdminConsole() {
     $("#setFooterText").value = st.footerText || "";
     $("#setAnnouncement").value = st.announcement || "";
     renderAdminChangelog();
+    renderAdminInvites(invitesRes);
   } catch (e) {
     toast(e.message, "err");
   }
@@ -566,6 +568,49 @@ function renderAdminUsers(users) {
     row.appendChild(av);
     row.appendChild(name);
     row.appendChild(meta);
+    list.appendChild(row);
+  });
+}
+
+/* 邀请码：生成 / 展示 / 复制 */
+function renderAdminInvites(data) {
+  const list = $("#inviteList");
+  if (!list) return;
+  const unused = (data && data.unused) || [];
+  const total = data && typeof data.total === "number" ? data.total : unused.length;
+  const used = data && typeof data.used === "number" ? data.used : 0;
+  list.innerHTML = "";
+  const summary = document.createElement("p");
+  summary.className = "invite-summary mono";
+  summary.textContent = `可用 ${unused.length} · 已用 ${used} · 总计 ${total}`;
+  list.appendChild(summary);
+  if (!unused.length) {
+    const empty = document.createElement("p");
+    empty.className = "avatar-hint";
+    empty.textContent = "还没有可用邀请码，点上方按钮生成。";
+    list.appendChild(empty);
+    return;
+  }
+  unused.forEach((code) => {
+    const row = document.createElement("div");
+    row.className = "invite-item";
+    const codeEl = document.createElement("code");
+    codeEl.className = "invite-code";
+    codeEl.textContent = code;
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "mini-btn";
+    copy.textContent = "复制";
+    copy.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(code);
+        toast("已复制 " + code, "ok");
+      } catch (e) {
+        toast("复制失败，请手动选中复制", "err");
+      }
+    });
+    row.appendChild(codeEl);
+    row.appendChild(copy);
     list.appendChild(row);
   });
 }
@@ -973,14 +1018,105 @@ let presetSel = new Set(store.get("rhine.presetSel", null) || FOOD_PRESETS.map((
 let tempItems = store.get("rhine.tempItems", []);
 let history = store.get("rhine.history", []);
 
-/* —— 外卖商品名（由本机爬虫推送到站点） —— */
+/* —— 外卖商品（由本机爬虫推送到站点） —— */
 let waimaiItems = [];
 let waimaiMeta = { source: "", updatedAt: 0 };
+let waimaiPrice = { min: "", max: "" };
+
+/* —— 内置品牌菜单（参考价，非官方实时菜单） —— */
+const BRAND_CATS = [
+  { id: "all", label: "全部" },
+  { id: "咖啡", label: "咖啡" },
+  { id: "奶茶", label: "奶茶" }
+];
+const BRAND_MENUS = [
+  {
+    id: "luckin", name: "瑞幸咖啡", cat: "咖啡",
+    items: [
+      { name: "生椰拿铁", price: 16 }, { name: "厚乳拿铁", price: 15 }, { name: "酱香拿铁", price: 19 },
+      { name: "美式咖啡", price: 12 }, { name: "橙C美式", price: 13 }, { name: "丝绒拿铁", price: 17 },
+      { name: "椰云拿铁", price: 16 }, { name: "抹茶瑞纳冰", price: 18 }
+    ]
+  },
+  {
+    id: "manner", name: "Manner", cat: "咖啡",
+    items: [
+      { name: "澳白", price: 15 }, { name: "拿铁", price: 20 }, { name: "美式", price: 15 },
+      { name: "卡布奇诺", price: 20 }, { name: "桂花拿铁", price: 22 }, { name: "燕麦拿铁", price: 22 },
+      { name: "冷萃", price: 22 }
+    ]
+  },
+  {
+    id: "starbucks", name: "星巴克", cat: "咖啡",
+    items: [
+      { name: "拿铁", price: 32 }, { name: "美式", price: 28 }, { name: "焦糖玛奇朵", price: 35 },
+      { name: "抹茶星冰乐", price: 36 }, { name: "摩卡", price: 34 }, { name: "馥芮白", price: 34 }
+    ]
+  },
+  {
+    id: "heytea", name: "喜茶", cat: "奶茶",
+    items: [
+      { name: "多肉葡萄", price: 19 }, { name: "芝芝莓莓", price: 19 }, { name: "烤黑糖波波牛乳", price: 18 },
+      { name: "满杯红柚", price: 17 }, { name: "芝芝芒芒", price: 19 }, { name: "生打椰椰奶冻", price: 18 }
+    ]
+  },
+  {
+    id: "mixue", name: "蜜雪冰城", cat: "奶茶",
+    items: [
+      { name: "冰鲜柠檬水", price: 4 }, { name: "珍珠奶茶", price: 6 }, { name: "棒打鲜橙", price: 7 },
+      { name: "满杯百香果", price: 8 }, { name: "草莓摇摇奶昔", price: 8 }, { name: "芋圆葡萄", price: 8 }
+    ]
+  },
+  {
+    id: "chabaidao", name: "茶百道", cat: "奶茶",
+    items: [
+      { name: "杨枝甘露", price: 16 }, { name: "豆乳玉麒麟", price: 15 }, { name: "桂花酒酿", price: 14 },
+      { name: "芋泥波波", price: 15 }, { name: "西瓜啵啵", price: 14 }, { name: "茉莉奶绿", price: 12 }
+    ]
+  }
+];
+let brandState = { cat: "all", brandId: "luckin", min: "", max: "" };
+
+function priceInRange(price, min, max) {
+  const lo = min === "" ? null : Number(min);
+  const hi = max === "" ? null : Number(max);
+  if (lo === null && hi === null) return true;
+  if (typeof price !== "number") return false;
+  if (lo !== null && price < lo) return false;
+  if (hi !== null && price > hi) return false;
+  return true;
+}
+
+function waimaiFiltered() {
+  return waimaiItems.filter((it) => priceInRange(it.price, waimaiPrice.min, waimaiPrice.max));
+}
+function brandsInCat() {
+  return BRAND_MENUS.filter((b) => brandState.cat === "all" || b.cat === brandState.cat);
+}
+function currentBrand() {
+  return BRAND_MENUS.find((b) => b.id === brandState.brandId) || brandsInCat()[0] || BRAND_MENUS[0];
+}
+function brandFilteredItems() {
+  const brand = currentBrand();
+  if (!brand) return [];
+  return brand.items.filter((it) => priceInRange(it.price, brandState.min, brandState.max));
+}
+function priceLabel(price) {
+  return typeof price === "number" ? "¥" + price : "时价";
+}
 
 async function loadWaimai() {
   try {
     const data = await api("/api/waimai");
-    waimaiItems = Array.isArray(data.items) ? data.items : [];
+    const raw = Array.isArray(data.items) ? data.items : [];
+    waimaiItems = raw.map((it) => {
+      if (typeof it === "string") return { name: it, price: null, shop: "" };
+      return {
+        name: String(it.name || ""),
+        price: typeof it.price === "number" ? it.price : null,
+        shop: String(it.shop || "")
+      };
+    }).filter((it) => it.name);
     waimaiMeta = { source: data.source || "", updatedAt: data.updatedAt || 0 };
   } catch (e) {
     waimaiItems = [];
@@ -994,20 +1130,87 @@ function renderWaimaiPool() {
   const wrap = $("#waimaiPool");
   if (!wrap) return;
   wrap.innerHTML = "";
-  waimaiItems.forEach((name) => {
+  const list = waimaiFiltered();
+  list.forEach((it) => {
     const chip = document.createElement("span");
     chip.className = "item-chip on";
-    chip.innerHTML = `<span class="tick">✓</span><span class="chip-name">${escapeHtml(name)}</span>`;
+    chip.innerHTML = `<span class="tick">✓</span><span class="chip-name">${escapeHtml(it.name)}</span>` +
+      `<span class="chip-price mono">${priceLabel(it.price)}</span>`;
     wrap.appendChild(chip);
   });
   const count = $("#waimaiCount");
-  if (count) count.textContent = waimaiItems.length + " 项";
+  if (count) count.textContent = `${list.length} 项` + (list.length !== waimaiItems.length ? ` / 共 ${waimaiItems.length}` : "");
   const status = $("#waimaiStatus");
   if (status) {
     status.textContent = waimaiItems.length
       ? `${waimaiMeta.source || "已同步"} · ${new Date(waimaiMeta.updatedAt).toLocaleString("zh-CN")}`
       : "暂无数据 · 运行爬虫并推送后点「同步」";
   }
+}
+
+function renderBrandCats() {
+  const row = $("#brandCats");
+  if (!row) return;
+  row.innerHTML = "";
+  BRAND_CATS.forEach((c) => {
+    const btn = document.createElement("button");
+    btn.className = "cat" + (brandState.cat === c.id ? " active" : "");
+    btn.textContent = c.label;
+    btn.addEventListener("click", () => {
+      brandState.cat = c.id;
+      const first = brandsInCat()[0];
+      if (first) brandState.brandId = first.id;
+      renderBrandCats();
+      renderBrandRow();
+      renderBrandPool();
+      refreshPoolUI();
+    });
+    row.appendChild(btn);
+  });
+}
+
+function renderBrandRow() {
+  const row = $("#brandRow");
+  if (!row) return;
+  row.innerHTML = "";
+  brandsInCat().forEach((b) => {
+    const btn = document.createElement("button");
+    btn.className = "brand-btn" + (brandState.brandId === b.id ? " active" : "");
+    btn.textContent = b.name;
+    btn.addEventListener("click", () => {
+      brandState.brandId = b.id;
+      renderBrandRow();
+      renderBrandPool();
+      refreshPoolUI();
+    });
+    row.appendChild(btn);
+  });
+}
+
+function renderBrandPool() {
+  const wrap = $("#brandPool");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  const brand = currentBrand();
+  const items = brandFilteredItems();
+  items.forEach((it) => {
+    const chip = document.createElement("span");
+    chip.className = "item-chip on";
+    chip.innerHTML = `<span class="tick">✓</span><span class="chip-name">${escapeHtml(it.name)}</span>` +
+      `<span class="chip-price mono">${priceLabel(it.price)}</span>`;
+    wrap.appendChild(chip);
+  });
+  const count = $("#brandCount");
+  if (count) {
+    const all = brand ? brand.items.length : 0;
+    count.textContent = `${items.length} 项` + (items.length !== all ? ` / 共 ${all}` : "");
+  }
+}
+
+function renderBrand() {
+  renderBrandCats();
+  renderBrandRow();
+  renderBrandPool();
 }
 
 const sheets = {
@@ -1214,7 +1417,10 @@ function activePool() {
     return sheets.state.items.slice();
   }
   if (picker.tab === "waimai") {
-    return waimaiItems.slice();
+    return waimaiFiltered().map((it) => it.name);
+  }
+  if (picker.tab === "brand") {
+    return brandFilteredItems().map((it) => it.name);
   }
   return tempItems.slice();
 }
@@ -2385,6 +2591,8 @@ function onModalOpened(name) {
     renderPresetPool();
     renderSheetsGuest();
     renderImportPool();
+    if (picker.tab === "brand") renderBrand();
+    if (picker.tab === "waimai") loadWaimai();
     refreshPoolUI();
     renderHistory();
     updateImportStatus(tempItems.length ? `${tempItems.length} 项（仅支持逐项移除）` : "未导入");
@@ -2866,6 +3074,16 @@ document.addEventListener("DOMContentLoaded", () => {
       announcement: $("#setAnnouncement").value
     });
   });
+  $("#inviteGenBtn").addEventListener("click", async () => {
+    const count = Math.max(1, Math.min(50, parseInt($("#inviteCount").value, 10) || 1));
+    try {
+      const res = await api("/api/admin/invites", { method: "POST", body: { count } });
+      toast(`已生成 ${res.codes.length} 个邀请码`, "ok");
+      renderAdminInvites(await api("/api/admin/invites"));
+    } catch (e) {
+      toast(e.message, "err");
+    }
+  });
   $("#versionBadge").addEventListener("click", () => {
     const latest = latestChange();
     if (latest) toast(`v${versionInfo.version} · ${latest.title || ""}`, "");
@@ -2888,6 +3106,7 @@ document.addEventListener("DOMContentLoaded", () => {
         p.classList.toggle("active", p.dataset.pane === picker.tab)
       );
       if (picker.tab === "waimai") loadWaimai();
+      if (picker.tab === "brand") renderBrand();
       refreshPoolUI();
     })
   );
@@ -3068,7 +3287,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const name = $("#waimaiSheetName").value.trim();
     if (!name) { toast("请填写清单名称", "err"); return; }
     try {
-      await api("/api/sheets", { method: "POST", body: { name, items: waimaiItems.slice() } });
+      await api("/api/sheets", { method: "POST", body: { name, items: waimaiFiltered().map((it) => it.name) } });
       $("#waimaiSaveBox").hidden = true;
       toast(`已生成云端清单「${name}」`, "ok");
       await loadSheets();
@@ -3092,6 +3311,37 @@ document.addEventListener("DOMContentLoaded", () => {
         toast(err.message, "err");
       }
     });
+  });
+
+  /* 价格区间筛选 */
+  function bindPriceFilter(minId, maxId, state, rerender) {
+    const minEl = $("#" + minId);
+    const maxEl = $("#" + maxId);
+    const update = () => {
+      state.min = minEl ? minEl.value : "";
+      state.max = maxEl ? maxEl.value : "";
+      rerender();
+      refreshPoolUI();
+    };
+    if (minEl) minEl.addEventListener("input", update);
+    if (maxEl) maxEl.addEventListener("input", update);
+  }
+  bindPriceFilter("waimaiMin", "waimaiMax", waimaiPrice, renderWaimaiPool);
+  bindPriceFilter("brandMin", "brandMax", brandState, renderBrandPool);
+  $("#waimaiPriceClear").addEventListener("click", () => {
+    $("#waimaiMin").value = "";
+    $("#waimaiMax").value = "";
+    waimaiPrice = { min: "", max: "" };
+    renderWaimaiPool();
+    refreshPoolUI();
+  });
+  $("#brandPriceClear").addEventListener("click", () => {
+    $("#brandMin").value = "";
+    $("#brandMax").value = "";
+    brandState.min = "";
+    brandState.max = "";
+    renderBrandPool();
+    refreshPoolUI();
   });
 
   /* 抽取选项 */

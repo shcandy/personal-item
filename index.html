@@ -280,6 +280,7 @@
           <button class="tab" data-tab="sheets" role="tab" aria-selected="false">我的清单</button>
           <button class="tab" data-tab="import" role="tab" aria-selected="false">临时导入</button>
           <button class="tab" data-tab="waimai" role="tab" aria-selected="false">外卖商品</button>
+          <button class="tab" data-tab="brand" role="tab" aria-selected="false">品牌菜单</button>
         </div>
 
         <!-- 预设面板 -->
@@ -381,6 +382,13 @@
             <span class="mono" id="waimaiStatus">暂无数据 · 运行爬虫并推送后点「同步」</span>
             <button class="mini-btn" id="waimaiRefresh" type="button">↻ 同步</button>
           </div>
+          <div class="price-filter">
+            <span class="mono">价格</span>
+            <input class="text-input price-input" id="waimaiMin" type="number" min="0" step="1" placeholder="最低" />
+            <span class="mono">–</span>
+            <input class="text-input price-input" id="waimaiMax" type="number" min="0" step="1" placeholder="最高" />
+            <button class="mini-btn" id="waimaiPriceClear" type="button">清除</button>
+          </div>
           <div class="chip-grid" id="waimaiPool"></div>
           <div class="pool-toolbar">
             <span class="pool-count mono" id="waimaiCount">0 项</span>
@@ -397,6 +405,26 @@
             </div>
           </div>
           <p class="waimai-tip">来自淘宝闪购等外卖平台 · 生成清单后可在「我的清单」里继续使用</p>
+        </section>
+
+        <!-- 品牌菜单（内置，参考价） -->
+        <section class="tabpane" data-pane="brand">
+          <div class="cat-row" id="brandCats"></div>
+          <div class="brand-row" id="brandRow"></div>
+          <div class="price-filter">
+            <span class="mono">价格</span>
+            <input class="text-input price-input" id="brandMin" type="number" min="0" step="1" placeholder="最低" />
+            <span class="mono">–</span>
+            <input class="text-input price-input" id="brandMax" type="number" min="0" step="1" placeholder="最高" />
+            <button class="mini-btn" id="brandPriceClear" type="button">清除</button>
+          </div>
+          <div class="chip-grid" id="brandPool"></div>
+          <div class="pool-toolbar">
+            <span class="pool-count mono" id="brandCount">0 项</span>
+            <div class="toolbar-btns">
+              <span class="mono waimai-tip">参考价 · 非官方实时菜单</span>
+            </div>
+          </div>
         </section>
 
         <!-- 抽取选项 -->
@@ -826,6 +854,7 @@
           <button class="tab active" data-admintab="users">成员</button>
           <button class="tab" data-admintab="text">界面文字</button>
           <button class="tab" data-admintab="log">版本与更新日志</button>
+          <button class="tab" data-admintab="invite">邀请码</button>
         </div>
         <section class="admin-pane" data-adminpane="users">
           <div class="admin-user-list" id="adminUserList"></div>
@@ -850,6 +879,15 @@
           </div>
           <p class="version-note">版本号与更新日志来自仓库的 <code>version.json</code>，随发版自动更新，不可在此手动修改。</p>
           <div class="changelog" id="adminChangelog"></div>
+        </section>
+        <section class="admin-pane" data-adminpane="invite" hidden>
+          <div class="setting-row">
+            <span class="setting-label">生成数量</span>
+            <input class="text-input invite-count" id="inviteCount" type="number" min="1" max="50" value="5" />
+          </div>
+          <button class="btn primary block" id="inviteGenBtn">生成邀请码</button>
+          <div class="invite-list" id="inviteList"></div>
+          <p class="avatar-hint">点击邀请码可复制；一个码只能注册一个账号。</p>
         </section>
       </div>
     </div>

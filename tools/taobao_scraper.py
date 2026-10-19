@@ -693,18 +693,26 @@ def unique_names(rows) -> list:
 
 
 def export_names(rows, path: Path):
-    """导出纯商品名：一份 .txt（每行一个）+ 一份 .json（含来源与数量）。"""
+    """导出商品名清单：.txt 每行一个名称，.json 带价格与店铺。"""
     names = unique_names(rows)
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     txt_path = path.with_suffix(".txt")
     json_path = path.with_suffix(".json")
     txt_path.write_text("\n".join(names) + ("\n" if names else ""), encoding="utf-8")
+    items = []
+    seen = set()
+    for r in rows:
+        name = re.sub(r"\s+", " ", (r.name or "")).strip()
+        if not name or name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        items.append({"name": name, "price": r.price, "shop": r.shop})
     json_path.write_text(json.dumps({
         "source": "taobao-shangou",
         "exportedAt": datetime.now().isoformat(timespec="seconds"),
-        "count": len(names),
-        "items": names,
+        "count": len(items),
+        "items": items,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     return names, [txt_path, json_path]
 
@@ -726,16 +734,24 @@ def _http_json(url: str, method: str = "GET", payload=None, token: str = ""):
         raise RuntimeError("HTTP {}: {}".format(e.code, detail))
 
 
-def push_names(base_url: str, names, token: str = "", user: str = "", password: str = ""):
-    """把商品名推送到站点（PUT /api/waimai，需要管理员身份）。"""
+def push_names(base_url: str, rows, token: str = "", user: str = "", password: str = ""):
+    """把商品（名称 + 价格 + 店铺）推送到站点（PUT /api/waimai，需要管理员身份）。"""
     base = base_url.rstrip("/")
     if not token and user and password:
         login = _http_json(base + "/api/login", "POST", {"username": user, "password": password})
         token = login.get("token", "")
     if not token:
         raise RuntimeError("缺少管理员 token：请传 --push-token，或 --push-user/--push-pass")
+    items = []
+    seen = set()
+    for r in rows:
+        name = re.sub(r"\s+", " ", (r.name or "")).strip()
+        if not name or name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        items.append({"name": name, "price": r.price, "shop": r.shop})
     return _http_json(base + "/api/waimai", "PUT", {
-        "items": list(names),
+        "items": items,
         "source": "taobao-shangou",
     }, token)
 
@@ -977,8 +993,8 @@ def main(argv=None) -> int:
         log("商品名清单已导出：{} 个不重复名称".format(len(names)))
     if args.push_url:
         try:
-            meta = push_names(args.push_url, names, args.push_token, args.push_user, args.push_pass)
-            log("已推送 {} 个商品名到 {}{}".format(
+            meta = push_names(args.push_url, all_rows, args.push_token, args.push_user, args.push_pass)
+            log("已推送 {} 个商品（含价格）到 {}{}".format(
                 meta.get("count", len(names)), args.push_url,
                 "（来源: {}）".format(meta.get("source")) if meta.get("source") else ""))
         except Exception as e:

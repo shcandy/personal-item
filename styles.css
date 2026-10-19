@@ -2139,3 +2139,67 @@ html[data-theme="dark"] .g2048-cell { background: rgba(255, 255, 255, 0.08); }
   flex-wrap: wrap;
 }
 .waimai-tip { font-size: 11px; color: var(--ink3); }
+
+/* ---------- 邀请码 ---------- */
+.invite-count { width: 90px; text-align: center; }
+.invite-summary { font-size: 12px; color: var(--ink3); margin: 12px 0 8px; }
+.invite-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.invite-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.03);
+}
+html[data-theme="dark"] .invite-item { background: rgba(255, 255, 255, 0.06); }
+.invite-code {
+  font-family: var(--mono);
+  font-size: 13.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+}
+
+/* ---------- 价格筛选 / 品牌菜单 ---------- */
+.price-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+  flex-wrap: wrap;
+}
+.price-filter .mono { font-size: 12px; color: var(--ink3); }
+.price-input {
+  width: 84px;
+  text-align: center;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+.brand-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.brand-btn {
+  border: none;
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--ink2);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-family: var(--sans);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.brand-btn.active { background: var(--blue); color: #fff; font-weight: 600; }
+html[data-theme="dark"] .brand-btn { background: rgba(255, 255, 255, 0.08); }
+.chip-price {
+  font-size: 11px;
+  color: var(--blue);
+  margin-left: 6px;
+  font-family: var(--mono);
+}
