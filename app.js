@@ -541,8 +541,13 @@ function renderAdminUsers(users) {
     const row = document.createElement("div");
     row.className = "admin-user";
     const av = document.createElement("span");
-    av.className = "avatar";
+    av.className = "avatar avatar-clickable";
     paintAvatar(av, u.username, u.avatar);
+    av.title = "查看并保存 " + u.username + " 的头像";
+    av.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openAvatarView(u.username, u.avatar);
+    });
     const name = document.createElement("span");
     name.className = "admin-user-name";
     name.textContent = u.username;
@@ -615,6 +620,72 @@ async function saveAvatar(value) {
     toast(e.message, "err");
     return false;
   }
+}
+
+/* ---------- 头像查看与保存 ---------- */
+let avatarViewData = null;
+
+function openAvatarView(name, avatar) {
+  avatarViewData = { name: name || "用户", avatar: avatar || null };
+  const el = $("#avatarViewImg");
+  paintAvatar(el, avatarViewData.name, avatarViewData.avatar);
+  const nameEl = $("#avatarViewName");
+  if (nameEl) nameEl.textContent = avatarViewData.name;
+  openModal("avatarView");
+}
+
+function buildAvatarCanvas(name, avatar) {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return Promise.resolve(canvas);
+  const color = avatar && avatar.startsWith("color:") ? avatar.slice(6) : "#a9a9af";
+  const initial = (name || "访").slice(0, 1).toUpperCase();
+  const drawFallback = () => {
+    ctx.clearRect(0, 0, size, size);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 120px -apple-system, 'Segoe UI', sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(initial, size / 2, size / 2 + 6);
+  };
+  if (avatar && avatar.startsWith("data:image/")) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(img, 0, 0, size, size);
+        ctx.restore();
+        resolve(canvas);
+      };
+      img.onerror = () => {
+        drawFallback();
+        resolve(canvas);
+      };
+      img.src = avatar;
+    });
+  }
+  drawFallback();
+  return Promise.resolve(canvas);
+}
+
+async function saveAvatarImage() {
+  if (!avatarViewData) return;
+  const canvas = await buildAvatarCanvas(avatarViewData.name, avatarViewData.avatar);
+  const link = document.createElement("a");
+  link.download = "avatar-" + avatarViewData.name + ".png";
+  link.href = canvas.toDataURL("image/png");
+  link.click();
+  toast("头像已保存", "ok");
 }
 
 /* ---------- 头像取景裁剪 ---------- */
@@ -825,17 +896,23 @@ function cancelCrop() {
 }
 
 async function checkHealth() {
+  const chip = $("#serverChip");
+  const label = $("#serverLabel");
   try {
     await api("/api/health");
     serverOnline = true;
-    const chip = $("#serverChip");
-    chip.textContent = "● 在线服务";
-    chip.classList.add("online");
+    if (chip) {
+      chip.dataset.state = "online";
+      chip.title = "在线服务";
+    }
+    if (label) label.textContent = "在线";
   } catch (e) {
     serverOnline = false;
-    const chip = $("#serverChip");
-    chip.textContent = "● 本地模式";
-    chip.classList.remove("online");
+    if (chip) {
+      chip.dataset.state = "offline";
+      chip.title = "本地模式";
+    }
+    if (label) label.textContent = "本地";
     if (location.hostname.endsWith("github.io")) showStaticBanner();
   }
 }
@@ -1403,16 +1480,36 @@ function renderComments() {
   cs.forEach((c) => {
     const li = document.createElement("div");
     li.className = "comment-item";
-    const del = c.mine
-      ? `<button class="c-del" data-id="${escapeHtml(c.id)}">删除</button>`
-      : "";
-    li.innerHTML =
-      `<div class="c-head">
-         <span class="c-name">${escapeHtml(c.username)}</span>
-         <span>${timeAgo(c.createdAt)}</span>
-         ${del}
-       </div>
-       <div class="c-content">${escapeHtml(c.content)}</div>`;
+    const head = document.createElement("div");
+    head.className = "c-head";
+    const av = document.createElement("span");
+    av.className = "avatar c-avatar";
+    paintAvatar(av, c.username, c.avatar);
+    av.title = "查看并保存 " + c.username + " 的头像";
+    av.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openAvatarView(c.username, c.avatar);
+    });
+    const name = document.createElement("span");
+    name.className = "c-name";
+    name.textContent = c.username;
+    const time = document.createElement("span");
+    time.textContent = timeAgo(c.createdAt);
+    head.appendChild(av);
+    head.appendChild(name);
+    head.appendChild(time);
+    if (c.mine) {
+      const del = document.createElement("button");
+      del.className = "c-del";
+      del.dataset.id = c.id;
+      del.textContent = "删除";
+      head.appendChild(del);
+    }
+    const body = document.createElement("div");
+    body.className = "c-content";
+    body.textContent = c.content;
+    li.appendChild(head);
+    li.appendChild(body);
     if (c.mine) {
       const btn = $(".c-del", li);
       btn.addEventListener("click", () => {
@@ -1655,6 +1752,8 @@ function setGame(name) {
   if (name === "guess") ensureGuess();
   if (name === "memory") ensureMemory();
   if (name === "ttt") ensureTtt();
+  if (name === "g2048") ensureG2048();
+  if (name === "chess") ensureChess();
   if (name === "dice") renderDiceBoard();
   const input = $("#guessInput");
   if (name === "guess" && input && !input.disabled && document.activeElement !== input) {
@@ -1715,7 +1814,7 @@ function submitGuess() {
 }
 
 /* —— 记忆翻牌 —— */
-const MEMORY_SYMBOLS = ["🦊", "🐼", "🌙", "⭐", "🍀", "🔭", "🧪", "🛰️"];
+const MEMORY_SYMBOLS = ["🍎", "🍊", "🍋", "🍇", "🍓", "🍑", "🍒", "🍉"];
 const memoryGame = { deck: [], flipped: [], matched: new Set(), moves: 0, lock: false, started: false };
 function ensureMemory() {
   if (!memoryGame.started) startMemory();
@@ -1891,6 +1990,234 @@ function bestTttMove(board) {
   return free[Math.floor(Math.random() * free.length)];
 }
 
+/* —— 2048 —— */
+const g2048 = { grid: [], score: 0, best: store.get("rhine.2048best", 0) || 0, over: false, started: false };
+function ensureG2048() {
+  if (!g2048.started) start2048();
+}
+function start2048() {
+  g2048.grid = Array.from({ length: 4 }, () => [0, 0, 0, 0]);
+  g2048.score = 0;
+  g2048.over = false;
+  g2048.started = true;
+  spawn2048();
+  spawn2048();
+  render2048();
+}
+function spawn2048() {
+  const empty = [];
+  g2048.grid.forEach((row, r) => row.forEach((v, c) => { if (!v) empty.push([r, c]); }));
+  if (!empty.length) return;
+  const pair = empty[Math.floor(Math.random() * empty.length)];
+  g2048.grid[pair[0]][pair[1]] = Math.random() < 0.9 ? 2 : 4;
+}
+function mergeLine2048(arr) {
+  const nums = arr.filter((v) => v);
+  const out = [];
+  for (let i = 0; i < nums.length; i++) {
+    if (nums[i] === nums[i + 1]) {
+      out.push(nums[i] * 2);
+      g2048.score += nums[i] * 2;
+      i++;
+    } else {
+      out.push(nums[i]);
+    }
+  }
+  while (out.length < 4) out.push(0);
+  return out;
+}
+function move2048(dir) {
+  if (g2048.over || !g2048.started) return;
+  const before = JSON.stringify(g2048.grid);
+  for (let i = 0; i < 4; i++) {
+    let line;
+    if (dir === "left" || dir === "right") {
+      line = g2048.grid[i].slice();
+      if (dir === "right") line.reverse();
+      line = mergeLine2048(line);
+      if (dir === "right") line.reverse();
+      g2048.grid[i] = line;
+    } else {
+      line = [0, 1, 2, 3].map((r) => g2048.grid[r][i]);
+      if (dir === "down") line.reverse();
+      line = mergeLine2048(line);
+      if (dir === "down") line.reverse();
+      for (let r = 0; r < 4; r++) g2048.grid[r][i] = line[r];
+    }
+  }
+  if (JSON.stringify(g2048.grid) === before) return;
+  spawn2048();
+  if (g2048.score > g2048.best) {
+    g2048.best = g2048.score;
+    store.set("rhine.2048best", g2048.best);
+  }
+  if (is2048Over()) g2048.over = true;
+  render2048();
+}
+function is2048Over() {
+  for (let r = 0; r < 4; r++) {
+    for (let c = 0; c < 4; c++) {
+      if (!g2048.grid[r][c]) return false;
+      if (c < 3 && g2048.grid[r][c] === g2048.grid[r][c + 1]) return false;
+      if (r < 3 && g2048.grid[r][c] === g2048.grid[r + 1][c]) return false;
+    }
+  }
+  return true;
+}
+function render2048() {
+  const grid = $("#g2048Grid");
+  if (!grid) return;
+  grid.innerHTML = "";
+  g2048.grid.flat().forEach((v) => {
+    const cell = document.createElement("div");
+    cell.className = "g2048-cell" + (v ? " v" + Math.min(v, 2048) : "");
+    cell.textContent = v || "";
+    grid.appendChild(cell);
+  });
+  $("#g2048Score").textContent = "分数 " + g2048.score;
+  $("#g2048Best").textContent = "最高 " + g2048.best;
+  $("#g2048Status").textContent = g2048.over ? "没有可移动的方向了，点重新开始" : "方向键 / 按钮移动";
+}
+
+/* —— 国际象棋（测试版，双人对弈） —— */
+const CHESS_GLYPH = {
+  wK: "♔", wQ: "♕", wR: "♖", wB: "♗", wN: "♘", wP: "♙",
+  bK: "♚", bQ: "♛", bR: "♜", bB: "♝", bN: "♞", bP: "♟"
+};
+const chess = { board: [], turn: "w", sel: -1, moves: [], over: false, started: false };
+function ensureChess() {
+  if (!chess.started) startChess();
+}
+function startChess() {
+  const back = ["R", "N", "B", "Q", "K", "B", "N", "R"];
+  const board = [];
+  back.forEach((t) => board.push("b" + t));
+  for (let i = 0; i < 8; i++) board.push("bP");
+  for (let i = 0; i < 32; i++) board.push(null);
+  for (let i = 0; i < 8; i++) board.push("wP");
+  back.forEach((t) => board.push("w" + t));
+  chess.board = board;
+  chess.turn = "w";
+  chess.sel = -1;
+  chess.moves = [];
+  chess.over = false;
+  chess.started = true;
+  renderChess();
+  setChessStatus("白方走棋");
+}
+function setChessStatus(text) {
+  const status = $("#chessStatus");
+  if (status) status.textContent = text;
+  const turn = $("#chessTurn");
+  if (turn) turn.textContent = text;
+}
+function renderChess() {
+  const grid = $("#chessGrid");
+  if (!grid) return;
+  grid.innerHTML = "";
+  chess.board.forEach((piece, i) => {
+    const r = Math.floor(i / 8);
+    const c = i % 8;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "chess-cell " + ((r + c) % 2 === 0 ? "light" : "dark");
+    if (i === chess.sel) btn.classList.add("sel");
+    if (chess.moves.includes(i)) btn.classList.add("move");
+    if (piece && piece[0] === "w") btn.classList.add("white-piece");
+    if (piece && piece[0] === "b") btn.classList.add("black-piece");
+    if (piece) btn.textContent = CHESS_GLYPH[piece];
+    btn.addEventListener("click", () => chessClick(i));
+    grid.appendChild(btn);
+  });
+}
+function chessMovesFrom(from, piece) {
+  const color = piece[0];
+  const type = piece[1];
+  const r = Math.floor(from / 8);
+  const c = from % 8;
+  const out = [];
+  const at = (rr, cc) => (rr >= 0 && rr < 8 && cc >= 0 && cc < 8) ? chess.board[rr * 8 + cc] : undefined;
+  const add = (rr, cc) => {
+    if (rr < 0 || rr > 7 || cc < 0 || cc > 7) return false;
+    const target = at(rr, cc);
+    if (!target) {
+      out.push(rr * 8 + cc);
+      return true;
+    }
+    if (target[0] !== color) out.push(rr * 8 + cc);
+    return false;
+  };
+  const slide = (dirs) => dirs.forEach(([dr, dc]) => {
+    let rr = r + dr;
+    let cc = c + dc;
+    while (add(rr, cc)) {
+      rr += dr;
+      cc += dc;
+    }
+  });
+  if (type === "P") {
+    const dir = color === "w" ? -1 : 1;
+    const startRow = color === "w" ? 6 : 1;
+    const one = r + dir;
+    if (one >= 0 && one <= 7 && !at(one, c)) {
+      out.push(one * 8 + c);
+      const two = r + 2 * dir;
+      if (r === startRow && two >= 0 && two <= 7 && !at(two, c)) out.push(two * 8 + c);
+    }
+    [[dir, -1], [dir, 1]].forEach(([dr, dc]) => {
+      const t = at(r + dr, c + dc);
+      if (t && t[0] !== color) out.push((r + dr) * 8 + (c + dc));
+    });
+  } else if (type === "N") {
+    [[-2, -1], [-2, 1], [-1, -2], [-1, 2], [1, -2], [1, 2], [2, -1], [2, 1]].forEach(([dr, dc]) => add(r + dr, c + dc));
+  } else if (type === "B") {
+    slide([[-1, -1], [-1, 1], [1, -1], [1, 1]]);
+  } else if (type === "R") {
+    slide([[-1, 0], [1, 0], [0, -1], [0, 1]]);
+  } else if (type === "Q") {
+    slide([[-1, -1], [-1, 1], [1, -1], [1, 1], [-1, 0], [1, 0], [0, -1], [0, 1]]);
+  } else if (type === "K") {
+    [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]].forEach(([dr, dc]) => add(r + dr, c + dc));
+  }
+  return out;
+}
+function chessClick(i) {
+  if (chess.over) return;
+  if (chess.sel >= 0 && chess.moves.includes(i)) {
+    const moving = chess.board[chess.sel];
+    chess.board[i] = moving;
+    chess.board[chess.sel] = null;
+    if (moving === "wP" && Math.floor(i / 8) === 0) chess.board[i] = "wQ";
+    if (moving === "bP" && Math.floor(i / 8) === 7) chess.board[i] = "bQ";
+    chess.sel = -1;
+    chess.moves = [];
+    chess.turn = chess.turn === "w" ? "b" : "w";
+    renderChess();
+    if (!chess.board.includes("bK")) {
+      chess.over = true;
+      setChessStatus("白方获胜");
+      toast("白方获胜", "ok");
+    } else if (!chess.board.includes("wK")) {
+      chess.over = true;
+      setChessStatus("黑方获胜");
+      toast("黑方获胜", "ok");
+    } else {
+      setChessStatus(chess.turn === "w" ? "白方走棋" : "黑方走棋");
+    }
+    return;
+  }
+  const piece = chess.board[i];
+  if (piece && piece[0] === chess.turn) {
+    chess.sel = i;
+    chess.moves = chessMovesFrom(i, piece);
+    renderChess();
+  } else {
+    chess.sel = -1;
+    chess.moves = [];
+    renderChess();
+  }
+}
+
 /* ============================================================
    M-04 速记板
    ============================================================ */
@@ -1965,6 +2292,7 @@ const MODAL_MAP = {
   plaza: "modalPlaza",
   auth: "modalAuth",
   avatar: "modalAvatar",
+  avatarView: "modalAvatarView",
   settings: "modalSettings",
   admin: "modalAdmin"
 };
@@ -2384,6 +2712,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   $("#avatarBtn").addEventListener("click", openAvatarModal);
   $("#avatarReset").addEventListener("click", () => saveAvatar(null));
+  $("#avatarSaveBtn").addEventListener("click", saveAvatarImage);
   $("#avatarFile").addEventListener("change", (e) => {
     const file = e.target.files && e.target.files[0];
     if (file) openCropWithFile(file);
@@ -2822,6 +3151,20 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#guessReset").addEventListener("click", startGuess);
   $("#memoryReset").addEventListener("click", startMemory);
   $("#tttReset").addEventListener("click", startTtt);
+  $$("#modalDice [data-g2048]").forEach((b) =>
+    b.addEventListener("click", () => move2048(b.dataset.g2048))
+  );
+  $("#g2048Reset").addEventListener("click", start2048);
+  $("#chessReset").addEventListener("click", startChess);
+  document.addEventListener("keydown", (e) => {
+    if (!currentModal || currentModal.id !== "modalDice") return;
+    if (gameState.active !== "g2048") return;
+    const map = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
+    const dir = map[e.key];
+    if (!dir) return;
+    e.preventDefault();
+    move2048(dir);
+  });
 
   /* —— 速记板 —— */
   $("#noteText").addEventListener("input", () => {

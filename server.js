@@ -624,9 +624,11 @@ routes["DELETE api/articles/:id"] = (req, res, url, parts) => {
 
 /* —— 评论（登录后可用；权限随文章：他人私密文章不可见也不可评） —— */
 function commentSummary(c, viewerId) {
+  const author = db.users.find((u) => u.id === c.userId);
   return {
     id: c.id,
     username: c.username,
+    avatar: (author && author.avatar) || null,
     content: c.content,
     createdAt: c.createdAt,
     mine: c.userId === viewerId

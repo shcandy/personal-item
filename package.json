@@ -1,6 +1,6 @@
 {
   "name": "rhine-terminal",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "private": true,
   "description": "苹果简约风模块工具台：随机选择器、云端清单、文章广场",
   "main": "server.js",
