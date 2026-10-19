@@ -75,6 +75,19 @@ const DEFAULT_SETTINGS = {
 
 const emptyDb = () => ({ users: [], sheets: [], articles: [], sessions: [], invites: [], comments: [], settings: { ...DEFAULT_SETTINGS }, waimai: { source: "", updatedAt: 0, items: [] } });
 
+function normalizeWaimaiItem(x) {
+  if (typeof x === "string") {
+    const name = x.replace(/\s+/g, " ").trim().slice(0, 60);
+    return name ? { name, price: null, shop: "" } : null;
+  }
+  if (!x || typeof x !== "object") return null;
+  const name = String(x.name || "").replace(/\s+/g, " ").trim().slice(0, 60);
+  if (!name) return null;
+  const n = Number(x.price);
+  const price = Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null;
+  return { name, price, shop: String(x.shop || "").slice(0, 40) };
+}
+
 function normalizeDb(raw) {
   return {
     users: Array.isArray(raw.users) ? raw.users : [],
@@ -87,7 +100,9 @@ function normalizeDb(raw) {
     waimai: {
       source: String((raw.waimai && raw.waimai.source) || ""),
       updatedAt: Number((raw.waimai && raw.waimai.updatedAt) || 0),
-      items: Array.isArray(raw.waimai && raw.waimai.items) ? raw.waimai.items : []
+      items: (Array.isArray(raw.waimai && raw.waimai.items) ? raw.waimai.items : [])
+        .map(normalizeWaimaiItem)
+        .filter(Boolean)
     }
   };
 }
@@ -494,12 +509,12 @@ routes["PUT api/waimai"] = async (req, res) => {
   const seen = new Set();
   const items = [];
   raw.forEach((x) => {
-    const name = String(x || "").replace(/\s+/g, " ").trim().slice(0, 60);
-    if (!name) return;
-    const key = name.toLowerCase();
+    const item = normalizeWaimaiItem(x);
+    if (!item) return;
+    const key = item.name.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
-    items.push(name);
+    items.push(item);
   });
   if (!items.length) return json(res, 400, { error: "商品名不能为空" });
   db.waimai = {
@@ -517,6 +532,29 @@ routes["DELETE api/waimai"] = (req, res) => {
   db.waimai = { source: "", updatedAt: Date.now(), items: [] };
   saveDb();
   json(res, 200, { ok: true });
+};
+
+/* —— 邀请码（管理员） —— */
+routes["GET api/admin/invites"] = (req, res) => {
+  const a = requireAdmin(req, res);
+  if (!a) return;
+  const unused = db.invites.filter((i) => !i.usedBy).map((i) => i.code);
+  json(res, 200, { unused, total: db.invites.length, used: db.invites.length - unused.length });
+};
+
+routes["POST api/admin/invites"] = async (req, res) => {
+  const a = requireAdmin(req, res);
+  if (!a) return;
+  const body = await readBody(req);
+  const n = Math.max(1, Math.min(50, parseInt(body.count, 10) || 1));
+  const codes = [];
+  for (let i = 0; i < n; i++) {
+    const code = generateInviteCode();
+    db.invites.push({ code, usedBy: null, usedAt: null, createdAt: Date.now() });
+    codes.push(code);
+  }
+  saveDb();
+  json(res, 200, { codes, total: db.invites.length, unused: db.invites.filter((i) => !i.usedBy).length });
 };
 
 /* —— 云端清单（sheet） —— */
