@@ -1340,6 +1340,7 @@ body {
   user-select: none;
   -webkit-user-drag: none;
   pointer-events: none;
+  image-orientation: none;
 }
 .crop-controls { display: flex; align-items: center; gap: 10px; }
 .crop-controls input[type="range"] { flex: 1; accent-color: var(--blue); }

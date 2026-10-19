@@ -614,13 +614,13 @@ function normalizeImageOrientation(img, o) {
   const ctx = canvas.getContext("2d");
   if (ctx) {
     switch (o) {
-      case 2: ctx.transform(-1, 0, 0, 1, w, 0); break;
-      case 3: ctx.transform(-1, 0, 0, -1, w, h); break;
-      case 4: ctx.transform(1, 0, 0, -1, 0, h); break;
-      case 5: ctx.transform(0, 1, 1, 0, 0, 0); break;
-      case 6: ctx.transform(0, 1, -1, 0, h, 0); break;
-      case 7: ctx.transform(0, -1, -1, 0, h, w); break;
-      case 8: ctx.transform(0, -1, 1, 0, 0, w); break;
+      case 2: ctx.translate(w, 0); ctx.scale(-1, 1); break;                 // 水平翻转
+      case 3: ctx.translate(w, h); ctx.rotate(Math.PI); break;               // 180°
+      case 4: ctx.translate(0, h); ctx.scale(1, -1); break;                  // 垂直翻转
+      case 5: ctx.transform(0, 1, 1, 0, 0, 0); break;                        // 转置
+      case 6: ctx.translate(h, 0); ctx.rotate(Math.PI / 2); break;           // 顺时针 90°
+      case 7: ctx.transform(0, -1, -1, 0, h - 1, w - 1); break;              // 反转置
+      case 8: ctx.translate(0, w); ctx.rotate(-Math.PI / 2); break;          // 逆时针 90°
     }
     ctx.drawImage(img, 0, 0);
   }
@@ -630,7 +630,8 @@ function normalizeImageOrientation(img, o) {
 function loadImageForCrop(src, orientation) {
   const img = new Image();
   img.onload = () => {
-    crop.img = orientation === 1 ? img : normalizeImageOrientation(img, orientation);
+    /* 始终归一化：方向摆正 + 画到 canvas，取景/预览/保存共用同一张图，杜绝不一致 */
+    crop.img = normalizeImageOrientation(img, orientation);
     crop.W = crop.img.width;
     crop.H = crop.img.height;
     /* 先显示取景区域，再测量宽度（隐藏元素宽度为 0） */
@@ -642,9 +643,7 @@ function loadImageForCrop(src, orientation) {
     crop.tx = (crop.view - crop.W * crop.scale0 * crop.zoom) / 2;
     crop.ty = (crop.view - crop.H * crop.scale0 * crop.zoom) / 2;
     const imgEl = $("#cropImage");
-    imgEl.src = (typeof crop.img.toDataURL === "function")
-      ? crop.img.toDataURL("image/jpeg", 0.95)
-      : crop.url;
+    imgEl.src = crop.img.toDataURL("image/jpeg", 0.95);
     $("#cropZoom").value = "1.2";
     layoutCrop();
   };
