@@ -1642,6 +1642,256 @@ async function rollDice() {
 }
 
 /* ============================================================
+   M-03 小游戏合集：掷骰子 / 猜数字 / 记忆翻牌 / 井字棋
+   ============================================================ */
+const gameState = { active: "dice" };
+
+function setGame(name) {
+  gameState.active = name;
+  $$("#gameTabs .game-tab").forEach((t) => t.classList.toggle("active", t.dataset.game === name));
+  $$("#modalDice .game-pane").forEach((p) => {
+    p.hidden = p.dataset.gamepane !== name;
+  });
+  if (name === "guess") ensureGuess();
+  if (name === "memory") ensureMemory();
+  if (name === "ttt") ensureTtt();
+  if (name === "dice") renderDiceBoard();
+  const input = $("#guessInput");
+  if (name === "guess" && input && !input.disabled && document.activeElement !== input) {
+    try { input.focus(); } catch (e) { /* 忽略 */ }
+  }
+}
+
+/* —— 猜数字 —— */
+const guessGame = { target: 0, tries: 0, over: false, started: false };
+function ensureGuess() {
+  if (!guessGame.started) startGuess();
+}
+function startGuess() {
+  guessGame.target = 1 + Math.floor(Math.random() * 100);
+  guessGame.tries = 0;
+  guessGame.over = false;
+  guessGame.started = true;
+  const input = $("#guessInput");
+  input.value = "";
+  input.disabled = false;
+  $("#guessSubmit").disabled = false;
+  $("#guessStatus").textContent = "范围 1–100 · 已猜 0 次";
+  $("#guessHistory").innerHTML = "";
+}
+function submitGuess() {
+  if (guessGame.over) return;
+  const input = $("#guessInput");
+  const n = parseInt(input.value, 10);
+  if (!Number.isInteger(n) || n < 1 || n > 100) {
+    toast("请输入 1–100 的整数", "err");
+    return;
+  }
+  guessGame.tries += 1;
+  const li = document.createElement("li");
+  let msg;
+  if (n === guessGame.target) {
+    msg = "猜中！";
+    guessGame.over = true;
+  } else if (n < guessGame.target) {
+    msg = "太小了 ↑";
+  } else {
+    msg = "太大了 ↓";
+  }
+  li.textContent = `${n} · ${msg}`;
+  const badge = document.createElement("span");
+  badge.textContent = "#" + guessGame.tries;
+  li.appendChild(badge);
+  $("#guessHistory").appendChild(li);
+  if (guessGame.over) {
+    $("#guessStatus").textContent = `猜中！共用 ${guessGame.tries} 次`;
+    input.disabled = true;
+    $("#guessSubmit").disabled = true;
+    toast(`猜中 ${guessGame.target}，用了 ${guessGame.tries} 次`, "ok");
+  } else {
+    $("#guessStatus").textContent = `已猜 ${guessGame.tries} 次 · ${n < guessGame.target ? "答案更大" : "答案更小"}`;
+  }
+  input.value = "";
+}
+
+/* —— 记忆翻牌 —— */
+const MEMORY_SYMBOLS = ["🦊", "🐼", "🌙", "⭐", "🍀", "🔭", "🧪", "🛰️"];
+const memoryGame = { deck: [], flipped: [], matched: new Set(), moves: 0, lock: false, started: false };
+function ensureMemory() {
+  if (!memoryGame.started) startMemory();
+}
+function startMemory() {
+  const deck = [];
+  MEMORY_SYMBOLS.forEach((sym) => {
+    deck.push({ sym });
+    deck.push({ sym });
+  });
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = deck[i];
+    deck[i] = deck[j];
+    deck[j] = tmp;
+  }
+  memoryGame.deck = deck;
+  memoryGame.flipped = [];
+  memoryGame.matched = new Set();
+  memoryGame.moves = 0;
+  memoryGame.lock = false;
+  memoryGame.started = true;
+  renderMemory();
+}
+function renderMemory() {
+  const grid = $("#memoryGrid");
+  if (!grid) return;
+  grid.innerHTML = "";
+  memoryGame.deck.forEach((card, idx) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "memory-card";
+    if (memoryGame.matched.has(idx)) {
+      btn.classList.add("matched");
+      btn.textContent = card.sym;
+    } else if (memoryGame.flipped.includes(idx)) {
+      btn.classList.add("flipped");
+      btn.textContent = card.sym;
+    }
+    btn.addEventListener("click", () => flipMemory(idx));
+    grid.appendChild(btn);
+  });
+  const status = $("#memoryStatus");
+  if (status) status.textContent = `步数 ${memoryGame.moves} · 配对 ${memoryGame.matched.size / 2}/${MEMORY_SYMBOLS.length}`;
+}
+function flipMemory(idx) {
+  const g = memoryGame;
+  if (g.lock || g.matched.has(idx) || g.flipped.includes(idx)) return;
+  g.flipped.push(idx);
+  renderMemory();
+  if (g.flipped.length === 2) {
+    g.moves += 1;
+    const a = g.flipped[0];
+    const b = g.flipped[1];
+    if (g.deck[a].sym === g.deck[b].sym) {
+      g.matched.add(a);
+      g.matched.add(b);
+      g.flipped = [];
+      renderMemory();
+      if (g.matched.size === g.deck.length) {
+        $("#memoryStatus").textContent = `全部配对！共用 ${g.moves} 步`;
+        toast("记忆翻牌完成 🎉", "ok");
+      }
+    } else {
+      g.lock = true;
+      setTimeout(() => {
+        g.flipped = [];
+        g.lock = false;
+        renderMemory();
+      }, 760);
+    }
+  }
+}
+
+/* —— 井字棋 —— */
+const TTT_LINES = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
+const tttGame = { board: [], over: false, busy: false, started: false };
+function ensureTtt() {
+  if (!tttGame.started) startTtt();
+}
+function startTtt() {
+  tttGame.board = Array(9).fill("");
+  tttGame.over = false;
+  tttGame.busy = false;
+  tttGame.started = true;
+  renderTtt();
+  $("#tttStatus").textContent = "轮到你走（X）";
+}
+function tttWinner(board) {
+  for (const line of TTT_LINES) {
+    const a = line[0];
+    const b = line[1];
+    const c = line[2];
+    if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+      return { mark: board[a], line };
+    }
+  }
+  return null;
+}
+function renderTtt(win) {
+  const grid = $("#tttGrid");
+  if (!grid) return;
+  grid.innerHTML = "";
+  tttGame.board.forEach((mark, i) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ttt-cell" + (mark ? " " + mark.toLowerCase() : "");
+    if (win && win.line.includes(i)) btn.classList.add("win");
+    btn.textContent = mark;
+    btn.disabled = tttGame.over || tttGame.busy || Boolean(mark);
+    btn.addEventListener("click", () => tttClick(i));
+    grid.appendChild(btn);
+  });
+}
+function tttClick(i) {
+  const g = tttGame;
+  if (g.over || g.busy || g.board[i]) return;
+  g.board[i] = "X";
+  const win = tttWinner(g.board);
+  if (win) {
+    g.over = true;
+    renderTtt(win);
+    $("#tttStatus").textContent = "你赢了 🎉";
+    toast("你赢了！", "ok");
+    return;
+  }
+  if (g.board.every((v) => v)) {
+    g.over = true;
+    renderTtt();
+    $("#tttStatus").textContent = "平局";
+    return;
+  }
+  g.busy = true;
+  renderTtt();
+  $("#tttStatus").textContent = "电脑思考中…";
+  setTimeout(() => {
+    const move = bestTttMove(g.board);
+    g.board[move] = "O";
+    const w2 = tttWinner(g.board);
+    g.busy = false;
+    if (w2) {
+      g.over = true;
+      renderTtt(w2);
+      $("#tttStatus").textContent = "电脑赢了，再来一局？";
+    } else if (g.board.every((v) => v)) {
+      g.over = true;
+      renderTtt();
+      $("#tttStatus").textContent = "平局";
+    } else {
+      renderTtt();
+      $("#tttStatus").textContent = "轮到你走（X）";
+    }
+  }, 280);
+}
+function findWinningMove(board, mark) {
+  for (const line of TTT_LINES) {
+    const marks = line.map((i) => board[i]);
+    if (marks.filter((m) => m === mark).length === 2 && marks.includes("")) {
+      return line[marks.indexOf("")];
+    }
+  }
+  return -1;
+}
+function bestTttMove(board) {
+  let m = findWinningMove(board, "O");
+  if (m >= 0) return m;
+  m = findWinningMove(board, "X");
+  if (m >= 0) return m;
+  if (!board[4]) return 4;
+  const corners = [0, 2, 6, 8].filter((i) => !board[i]);
+  if (corners.length) return corners[Math.floor(Math.random() * corners.length)];
+  const free = board.map((v, i) => (v ? -1 : i)).filter((i) => i >= 0);
+  return free[Math.floor(Math.random() * free.length)];
+}
+
+/* ============================================================
    M-04 速记板
    ============================================================ */
 let noteSaveTimer = null;
@@ -1770,7 +2020,10 @@ function onModalOpened(name) {
   }
   if (name === "sheets") { /* 不单独存在 */ }
   if (name === "focus") renderFocus();
-  if (name === "dice") renderDiceBoard();
+  if (name === "dice") {
+    renderDiceBoard();
+    setGame(gameState.active || "dice");
+  }
   if (name === "note") {
     $("#noteText").value = store.get("rhine.note", "");
     saveNote();
@@ -2554,6 +2807,21 @@ document.addEventListener("DOMContentLoaded", () => {
     })
   );
   $("#diceRoll").addEventListener("click", rollDice);
+
+  /* —— 小游戏合集 —— */
+  $$("#gameTabs .game-tab").forEach((tab) =>
+    tab.addEventListener("click", () => setGame(tab.dataset.game))
+  );
+  $("#guessSubmit").addEventListener("click", submitGuess);
+  $("#guessInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submitGuess();
+    }
+  });
+  $("#guessReset").addEventListener("click", startGuess);
+  $("#memoryReset").addEventListener("click", startMemory);
+  $("#tttReset").addEventListener("click", startTtt);
 
   /* —— 速记板 —— */
   $("#noteText").addEventListener("input", () => {

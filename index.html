@@ -132,13 +132,13 @@
           </div>
         </article>
 
-        <!-- M-03 掷骰子 -->
-        <article class="card" data-module="dice" tabindex="0" role="button" aria-label="打开掷骰子">
+        <!-- M-03 小游戏合集 -->
+        <article class="card" data-module="dice" tabindex="0" role="button" aria-label="打开小游戏合集">
           <div class="module-head">
             <div>
-              <div class="module-code mono">M-03 · DICE ROLL</div>
-              <h3 class="module-name">掷骰子</h3>
-              <p class="module-desc">1–3 枚骰子同时投掷，附带点数求和。</p>
+              <div class="module-code mono">M-03 · MINI GAMES</div>
+              <h3 class="module-name">小游戏合集</h3>
+              <p class="module-desc">掷骰子、猜数字、记忆翻牌、井字棋，四个小游戏换换脑子。</p>
             </div>
             <span class="status-dot" title="就绪"></span>
           </div>
@@ -147,8 +147,8 @@
             <span class="die die-static" id="dicePreviewDie2">2</span>
           </div>
           <div class="card-foot">
-            <span class="foot-note mono">掷出即记录</span>
-            <span class="hint">投掷 →</span>
+            <span class="foot-note mono">4 款小游戏</span>
+            <span class="hint">进入 →</span>
           </div>
         </article>
 
@@ -438,27 +438,67 @@
     <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="diceTitle">
       <header class="modal-head">
         <div>
-          <div class="modal-code mono">M-03 · DICE ROLL</div>
-          <h3 id="diceTitle">掷骰子</h3>
-          <p class="modal-desc">选择骰子枚数，掷出你的点数。</p>
+          <div class="modal-code mono">M-03 · MINI GAMES</div>
+          <h3 id="diceTitle">小游戏合集</h3>
+          <p class="modal-desc">四个小游戏，换换脑子。</p>
         </div>
         <button class="close-btn" data-close aria-label="关闭">✕</button>
       </header>
-      <div class="modal-body center">
-        <div class="seg-row">
-          <button class="mini-btn" data-dice="1">1 枚</button>
-          <button class="mini-btn active" data-dice="2">2 枚</button>
-          <button class="mini-btn" data-dice="3">3 枚</button>
+      <div class="modal-body">
+        <div class="game-tabs" id="gameTabs" role="tablist">
+          <button class="game-tab active" data-game="dice" role="tab">掷骰子</button>
+          <button class="game-tab" data-game="guess" role="tab">猜数字</button>
+          <button class="game-tab" data-game="memory" role="tab">记忆翻牌</button>
+          <button class="game-tab" data-game="ttt" role="tab">井字棋</button>
         </div>
-        <div class="dice-board" id="diceBoard">
-          <span class="die">1</span>
-          <span class="die">2</span>
-        </div>
-        <div class="dice-sum mono" id="diceSum">合计 · 3</div>
-        <div class="focus-controls">
-          <button class="btn primary" id="diceRoll">投掷</button>
-          <span class="mono dice-count" id="diceCount">累计 0 次</span>
-        </div>
+
+        <section class="game-pane center" data-gamepane="dice">
+          <div class="seg-row">
+            <button class="mini-btn" data-dice="1">1 枚</button>
+            <button class="mini-btn active" data-dice="2">2 枚</button>
+            <button class="mini-btn" data-dice="3">3 枚</button>
+          </div>
+          <div class="dice-board" id="diceBoard">
+            <span class="die">1</span>
+            <span class="die">2</span>
+          </div>
+          <div class="dice-sum mono" id="diceSum">合计 · 3</div>
+          <div class="focus-controls">
+            <button class="btn primary" id="diceRoll">投掷</button>
+            <span class="mono dice-count" id="diceCount">累计 0 次</span>
+          </div>
+        </section>
+
+        <section class="game-pane" data-gamepane="guess" hidden>
+          <p class="game-desc">我心里想了一个 1–100 的整数，用最少的次数猜出来。</p>
+          <div class="guess-row">
+            <input class="text-input guess-input" id="guessInput" type="number" min="1" max="100" inputmode="numeric" placeholder="输入 1–100" />
+            <button class="btn primary" id="guessSubmit">猜</button>
+          </div>
+          <p class="game-status" id="guessStatus">范围 1–100 · 已猜 0 次</p>
+          <ol class="guess-history" id="guessHistory"></ol>
+          <div class="game-actions">
+            <button class="btn ghost small" id="guessReset">重新开始</button>
+          </div>
+        </section>
+
+        <section class="game-pane" data-gamepane="memory" hidden>
+          <p class="game-desc">翻开两张相同的牌，全部配对即获胜。</p>
+          <div class="memory-grid" id="memoryGrid"></div>
+          <p class="game-status" id="memoryStatus">步数 0 · 配对 0/8</p>
+          <div class="game-actions">
+            <button class="btn ghost small" id="memoryReset">重新开始</button>
+          </div>
+        </section>
+
+        <section class="game-pane" data-gamepane="ttt" hidden>
+          <p class="game-desc">你执 X，电脑执 O，先连成三子者胜。</p>
+          <div class="ttt-grid" id="tttGrid"></div>
+          <p class="game-status" id="tttStatus">轮到你走（X）</p>
+          <div class="game-actions">
+            <button class="btn ghost small" id="tttReset">重新开始</button>
+          </div>
+        </section>
       </div>
     </div>
   </div>
