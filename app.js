@@ -140,24 +140,31 @@ const savedAuth = store.get("rhine.auth", { token: "", username: "" });
 const auth = {
   token: savedAuth.token || "",
   username: savedAuth.username || "",
-  avatar: savedAuth.avatar || null
+  avatar: savedAuth.avatar || null,
+  isAdmin: false
 };
 let serverOnline = true;
 let authReturnTo = null; // 登录成功后的返回目标（模块名）
+let adminMode = false; // 管理员模式（仅管理员可切换）
 
 function isAuthed() { return Boolean(auth.token); }
 
-/* 头像渲染：支持 emoji 或图片 data URL */
+/* 头像渲染：色块 color:#rrggbb / 图片 data URL / 旧版 emoji */
 function paintAvatar(el, name, avatar) {
   if (!el) return;
   el.textContent = "";
   el.style.backgroundImage = "";
   el.style.backgroundSize = "";
   el.style.backgroundPosition = "";
+  el.style.background = "";
   el.classList.remove("has-image");
+  const color = avatar && avatar.startsWith("color:") ? avatar.slice(6) : null;
   if (avatar && avatar.startsWith("data:image/")) {
     el.style.backgroundImage = `url("${avatar}")`;
     el.classList.add("has-image");
+  } else if (color) {
+    el.style.background = color;
+    el.textContent = (name || "访").slice(0, 1).toUpperCase();
   } else if (avatar) {
     el.textContent = avatar;
   } else {
@@ -190,7 +197,6 @@ function applyTheme(mode) {
   document.documentElement.dataset.theme = dark ? "dark" : "light";
   const btn = $("#themeBtn");
   if (btn) {
-    btn.textContent = dark ? "☀️" : "🌙";
     btn.title = dark ? "切换到浅色" : "切换到深色";
     btn.setAttribute("aria-label", btn.title);
   }
@@ -210,11 +216,34 @@ function applyMotion(value) {
   document.documentElement.dataset.motion = value;
   syncSeg("#motionSeg", "motion", value);
 }
+
+/* 壁纸：本地个性化，不改变毛玻璃模块 */
+const WALLPAPER_KEY = "rhine.wallpaper";
+const WALLPAPER_GRADS = {
+  "grad-sunset": "linear-gradient(135deg, #ff9a56, #ff5e7e 60%, #b04bd9)",
+  "grad-ocean": "linear-gradient(135deg, #36c2ff, #3b7cff 70%, #2b3aa8)",
+  "grad-mint": "linear-gradient(135deg, #a8ffcb, #34d399 60%, #0ea5a5)",
+  "grad-night": "linear-gradient(135deg, #2b2f5e, #1b1f3a 55%, #0d0f22)"
+};
+function applyWallpaper(value) {
+  const body = document.body;
+  if (!value || value === "none") {
+    body.style.backgroundImage = "";
+    body.classList.remove("has-wallpaper");
+  } else {
+    body.style.backgroundImage = WALLPAPER_GRADS[value] ? WALLPAPER_GRADS[value] : `url("${value}")`;
+    body.classList.add("has-wallpaper");
+  }
+  $$("#wallpaperRow .wallpaper-swatch").forEach((s) => {
+    s.classList.toggle("active", s.dataset.wall === (value || "none"));
+  });
+}
 function initPrefs() {
   applyTheme(themeMode);
   applyAccent(store.get(ACCENT_KEY, "blue") || "blue");
   applyReader(store.get(READER_KEY, "serif") || "serif");
   applyMotion(store.get(MOTION_KEY, "normal") || "normal");
+  applyWallpaper(store.get(WALLPAPER_KEY, "none") || "none");
 
   const btn = $("#themeBtn");
   if (btn) {
@@ -229,6 +258,39 @@ function initPrefs() {
       if (themeMode === "system") applyTheme("system");
     });
   } catch (e) { /* 旧浏览器忽略 */ }
+}
+
+function readWallpaperFile(file) {
+  if (!file || !file.type.startsWith("image/")) {
+    toast("请选择图片文件", "err");
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      const max = 1600;
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        toast("当前浏览器不支持图片处理", "err");
+        return;
+      }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      let dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+      if (dataUrl.length > 400000) dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+      store.set(WALLPAPER_KEY, dataUrl);
+      applyWallpaper(dataUrl);
+      toast("壁纸已更新", "ok");
+    };
+    img.onerror = () => toast("图片读取失败", "err");
+    img.src = reader.result;
+  };
+  reader.onerror = () => toast("文件读取失败", "err");
+  reader.readAsDataURL(file);
 }
 
 async function api(path, { method = "GET", body } = {}) {
@@ -291,15 +353,23 @@ function renderUserUI() {
   $("#userName").textContent = logged ? auth.username : "登录";
   $("#popName").textContent = logged ? auth.username : "未登录";
   $("#popSub").textContent = logged ? "清单与文章已同步至该账号" : "登录后可同步清单与文章";
+  /* 管理员入口 */
+  const adminBtn = $("#adminBtn");
+  const panelBtn = $("#adminPanelBtn");
+  if (adminBtn) adminBtn.hidden = !(logged && auth.isAdmin);
+  if (panelBtn) panelBtn.hidden = !(logged && auth.isAdmin && adminMode);
+  if (adminBtn) adminBtn.classList.toggle("active", adminMode);
 }
 
-/* 服务端刷新头像（登录后调用） */
+/* 服务端刷新头像与管理员身份（登录后调用） */
 async function refreshProfile() {
   if (!isAuthed()) return;
   try {
     const data = await api("/api/me");
-    if (data && data.avatar !== undefined) {
-      auth.avatar = data.avatar || null;
+    if (data) {
+      auth.username = data.username || auth.username;
+      if (data.avatar !== undefined) auth.avatar = data.avatar || null;
+      auth.isAdmin = Boolean(data.isAdmin);
       store.set("rhine.auth", { token: auth.token, username: auth.username, avatar: auth.avatar });
       renderUserUI();
       paintAvatar($("#avatarPreview"), auth.username, auth.avatar);
@@ -307,8 +377,127 @@ async function refreshProfile() {
   } catch (e) { /* 忽略 */ }
 }
 
+/* ---------- 站点设置 / 版本 / 管理员 ---------- */
+function escHtml(s) {
+  return String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function renderMultiline(el, text) {
+  if (!el) return;
+  el.innerHTML = escHtml(text).replace(/\n/g, "<br />");
+}
+
+let siteSettings = null;
+
+function applySiteSettings(s) {
+  siteSettings = s;
+  if (!s) return;
+  document.title = s.siteName || document.title;
+  const nameEl = $("#siteName");
+  if (nameEl) nameEl.textContent = s.siteName || "RHEIN TERMINAL";
+  renderMultiline($("#heroTitle"), s.heroTitle);
+  renderMultiline($("#heroSub"), s.heroSub);
+  const fn = $("#footerName");
+  if (fn) fn.textContent = s.siteName || "RHEIN TERMINAL";
+  const ft = $("#footerText");
+  if (ft) ft.textContent = s.footerText || "";
+  const ann = $("#announcement");
+  if (ann) {
+    if (s.announcement && s.announcement.trim()) {
+      ann.textContent = s.announcement;
+      ann.hidden = false;
+    } else {
+      ann.hidden = true;
+    }
+  }
+  const badge = $("#versionBadge");
+  if (badge) {
+    badge.textContent = "v" + (s.version || "2.3.0");
+    badge.title = s.updates ? `更新说明：${s.updates}` : "点击查看更新说明";
+  }
+}
+
+async function loadSiteSettings() {
+  try {
+    const s = await api("/api/settings");
+    applySiteSettings(s);
+    const seen = store.get("rhine.seenVersion", "");
+    if (s.version && s.version !== seen) {
+      store.set("rhine.seenVersion", s.version);
+      const msg = s.updates ? `已更新到 v${s.version}：${s.updates}` : `已更新到 v${s.version}`;
+      setTimeout(() => toast(msg, "ok"), 600);
+    }
+  } catch (e) { /* 离线时保留默认文案 */ }
+}
+
+function toggleAdminMode() {
+  if (!auth.isAdmin) return;
+  adminMode = !adminMode;
+  renderUserUI();
+  toast(adminMode ? "管理员模式已开启" : "管理员模式已关闭", adminMode ? "ok" : "");
+}
+
+async function loadAdminConsole() {
+  if (!auth.isAdmin) return;
+  try {
+    const [usersRes, settingsRes] = await Promise.all([
+      api("/api/admin/users"),
+      api("/api/admin/settings")
+    ]);
+    renderAdminUsers(usersRes.users || []);
+    const st = settingsRes.settings || {};
+    $("#setSiteName").value = st.siteName || "";
+    $("#setHeroTitle").value = st.heroTitle || "";
+    $("#setHeroSub").value = st.heroSub || "";
+    $("#setFooterText").value = st.footerText || "";
+    $("#setAnnouncement").value = st.announcement || "";
+    $("#setVersion").value = st.version || "";
+    $("#setUpdates").value = st.updates || "";
+  } catch (e) {
+    toast(e.message, "err");
+  }
+}
+
+function renderAdminUsers(users) {
+  const list = $("#adminUserList");
+  if (!list) return;
+  list.innerHTML = "";
+  users.forEach((u) => {
+    const row = document.createElement("div");
+    row.className = "admin-user";
+    const av = document.createElement("span");
+    av.className = "avatar";
+    paintAvatar(av, u.username, u.avatar);
+    const name = document.createElement("span");
+    name.className = "admin-user-name";
+    name.textContent = u.username;
+    if (u.isAdmin) {
+      const tag = document.createElement("span");
+      tag.className = "admin-tag";
+      tag.textContent = "管理员";
+      name.appendChild(tag);
+    }
+    const meta = document.createElement("span");
+    meta.className = "admin-user-meta";
+    meta.textContent = u.createdAt ? new Date(u.createdAt).toLocaleDateString("zh-CN") : "";
+    row.appendChild(av);
+    row.appendChild(name);
+    row.appendChild(meta);
+    list.appendChild(row);
+  });
+}
+
+async function saveAdminSettings(payload) {
+  try {
+    const res = await api("/api/admin/settings", { method: "PUT", body: payload });
+    applySiteSettings({ ...(siteSettings || {}), ...res.settings });
+    toast("已保存", "ok");
+  } catch (e) {
+    toast(e.message, "err");
+  }
+}
+
 /* ---------- 自定义头像 ---------- */
-const AVATAR_PRESETS = ["🦉", "🦊", "🐼", "🐧", "🐱", "🐸", "🌙", "⭐", "🍀", "🔭", "🧪", "🛰️"];
+const AVATAR_COLORS = ["#0071e3", "#34c759", "#ff9500", "#ff3b30", "#8b5cf6", "#d94f8a", "#00b8d9", "#5ac8fa"];
 
 function openAvatarModal() {
   closePopover();
@@ -321,12 +510,13 @@ function renderAvatarPicker() {
   if (!grid) return;
   setCropMode(false);
   grid.innerHTML = "";
-  AVATAR_PRESETS.forEach((emoji) => {
+  AVATAR_COLORS.forEach((color) => {
     const b = document.createElement("button");
     b.type = "button";
-    b.className = "avatar-opt" + (auth.avatar === emoji ? " active" : "");
-    b.textContent = emoji;
-    b.addEventListener("click", () => saveAvatar(emoji));
+    b.className = "avatar-opt" + (auth.avatar === `color:${color}` ? " active" : "");
+    b.style.background = color;
+    b.setAttribute("aria-label", "颜色 " + color);
+    b.addEventListener("click", () => saveAvatar(`color:${color}`));
     grid.appendChild(b);
   });
   paintAvatar($("#avatarPreview"), auth.username || "访", auth.avatar);
@@ -406,6 +596,37 @@ function openCropWithFile(file) {
   img.src = crop.url;
 }
 
+function getCropRect() {
+  const s = crop.scale0 * crop.zoom;
+  const sw = crop.view / s;
+  const sh = crop.view / s;
+  const sx = Math.max(0, Math.min(crop.W - sw, -crop.tx / s));
+  const sy = Math.max(0, Math.min(crop.H - sh, -crop.ty / s));
+  return { sx, sy, sw, sh };
+}
+
+let previewRaf = 0;
+function updatePreview() {
+  if (!crop.img) return;
+  const rect = getCropRect();
+  const pv = 128;
+  const c = document.createElement("canvas");
+  c.width = pv;
+  c.height = pv;
+  const ctx = c.getContext("2d");
+  if (!ctx) return;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(crop.img, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, pv, pv);
+  const url = c.toDataURL("image/png");
+  const preview = $("#avatarPreview");
+  preview.style.backgroundImage = `url("${url}")`;
+  preview.style.backgroundSize = "cover";
+  preview.style.backgroundPosition = "center";
+  preview.textContent = "";
+  preview.classList.add("has-image");
+}
+
 function layoutCrop() {
   if (!crop.img) return;
   const s = crop.scale0 * crop.zoom;
@@ -419,18 +640,11 @@ function layoutCrop() {
   imgEl.style.height = h + "px";
   imgEl.style.left = crop.tx + "px";
   imgEl.style.top = crop.ty + "px";
-
-  /* 实时预览：把取景框内容映射到 76px 预览圆 */
-  const preview = $("#avatarPreview");
-  const pv = 76;
-  const ratio = pv / crop.view;
-  preview.style.backgroundImage = `url("${crop.url}")`;
-  preview.style.backgroundSize = `${w * ratio}px ${h * ratio}px`;
-  preview.style.backgroundPosition = `${crop.tx * ratio}px ${crop.ty * ratio}px`;
-  preview.textContent = "";
-  preview.classList.add("has-image");
   const zoomVal = $("#cropZoomVal");
   if (zoomVal) zoomVal.textContent = Math.round(crop.zoom * 100) + "%";
+  /* 预览与最终保存共用同一条 canvas 管线，保证一致 */
+  cancelAnimationFrame(previewRaf);
+  previewRaf = requestAnimationFrame(updatePreview);
 }
 
 async function saveCroppedAvatar() {
@@ -446,13 +660,9 @@ async function saveCroppedAvatar() {
   }
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  /* 按取景框对应的源图区域裁切，保证输出与预览一致 */
-  const s = crop.scale0 * crop.zoom;
-  const sw = crop.view / s;
-  const sh = crop.view / s;
-  const sx = Math.max(0, Math.min(crop.W - sw, -crop.tx / s));
-  const sy = Math.max(0, Math.min(crop.H - sh, -crop.ty / s));
-  ctx.drawImage(crop.img, sx, sy, sw, sh, 0, 0, size, size);
+  /* 与预览共用同一条取景计算，保证一致 */
+  const rect = getCropRect();
+  ctx.drawImage(crop.img, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, size, size);
   let dataUrl = canvas.toDataURL("image/jpeg", 0.9);
   if (dataUrl.length > 110000) dataUrl = canvas.toDataURL("image/jpeg", 0.72);
   if (dataUrl.length > 110000) dataUrl = canvas.toDataURL("image/jpeg", 0.55);
@@ -1361,7 +1571,8 @@ const MODAL_MAP = {
   plaza: "modalPlaza",
   auth: "modalAuth",
   avatar: "modalAvatar",
-  settings: "modalSettings"
+  settings: "modalSettings",
+  admin: "modalAdmin"
 };
 const MODAL_NAME = Object.fromEntries(Object.entries(MODAL_MAP).map(([k, v]) => [v, k]));
 
@@ -1438,7 +1649,9 @@ function onModalOpened(name) {
     applyAccent(store.get(ACCENT_KEY, "blue") || "blue");
     applyReader(store.get(READER_KEY, "serif") || "serif");
     applyMotion(store.get(MOTION_KEY, "normal") || "normal");
+    applyWallpaper(store.get(WALLPAPER_KEY, "none") || "none");
   }
+  if (name === "admin") loadAdminConsole();
 }
 
 /* 账号弹层 */
@@ -1663,6 +1876,51 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#settingsAvatarBtn").addEventListener("click", () => {
     closeModal();
     openAvatarModal();
+  });
+
+  /* 壁纸 */
+  $("#wallpaperRow").addEventListener("click", (e) => {
+    const sw = e.target.closest("[data-wall]");
+    if (!sw) return;
+    store.set(WALLPAPER_KEY, sw.dataset.wall);
+    applyWallpaper(sw.dataset.wall);
+  });
+  $("#wallpaperFile").addEventListener("change", (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) readWallpaperFile(file);
+    e.target.value = "";
+  });
+
+  /* 管理员 */
+  $("#adminBtn").addEventListener("click", toggleAdminMode);
+  $("#adminPanelBtn").addEventListener("click", () => openModal("admin"));
+  $$("#modalAdmin [data-admintab]").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const key = tab.dataset.admintab;
+      $$("#modalAdmin [data-admintab]").forEach((t) => t.classList.toggle("active", t === tab));
+      $$("#modalAdmin [data-adminpane]").forEach((p) => {
+        p.hidden = p.dataset.adminpane !== key;
+      });
+    });
+  });
+  $("#saveTextSettings").addEventListener("click", () => {
+    saveAdminSettings({
+      siteName: $("#setSiteName").value,
+      heroTitle: $("#setHeroTitle").value,
+      heroSub: $("#setHeroSub").value,
+      footerText: $("#setFooterText").value,
+      announcement: $("#setAnnouncement").value
+    });
+  });
+  $("#saveLogSettings").addEventListener("click", () => {
+    saveAdminSettings({
+      version: $("#setVersion").value,
+      updates: $("#setUpdates").value
+    });
+  });
+  $("#versionBadge").addEventListener("click", () => {
+    if (siteSettings && siteSettings.updates) toast(`v${siteSettings.version || ""} · ${siteSettings.updates}`, "");
+    else openSettings();
   });
   document.addEventListener("click", (e) => {
     const pop = $("#accountPop");
@@ -2021,6 +2279,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setInterval(refreshStats, 30000);
   if (location.hostname.endsWith("github.io")) showStaticBanner();
   checkHealth();
+  loadSiteSettings();
 
   /* 启动时若有 token，校验一次会话 */
   if (auth.token) {
@@ -2028,6 +2287,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (data && data.username) {
         auth.username = data.username;
         if (data.avatar !== undefined) auth.avatar = data.avatar || null;
+        auth.isAdmin = Boolean(data.isAdmin);
         store.set("rhine.auth", { token: auth.token, username: auth.username, avatar: auth.avatar });
         renderUserUI();
         refreshPlazaCard();

@@ -1306,14 +1306,14 @@ body {
 .avatar-opt {
   border: none;
   background: rgba(0, 0, 0, 0.05);
-  border-radius: 12px;
-  height: 46px;
-  font-size: 22px;
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
   cursor: pointer;
-  transition: background 0.15s ease, box-shadow 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
-.avatar-opt:hover { background: rgba(0, 0, 0, 0.09); }
-.avatar-opt.active { background: var(--blue-tint); box-shadow: inset 0 0 0 2px var(--blue); }
+.avatar-opt:hover { transform: scale(1.08); }
+.avatar-opt.active { box-shadow: 0 0 0 2px var(--card-solid), 0 0 0 4px var(--blue); }
 .avatar-actions { display: flex; gap: 10px; margin-top: 18px; justify-content: center; flex-wrap: wrap; }
 .avatar-actions label.btn { cursor: pointer; }
 .avatar-hint { text-align: center; font-size: 12.5px; color: var(--ink3); margin-top: 14px; }
@@ -1580,4 +1580,104 @@ html[data-motion="reduce"] *::after {
   .setting-row { align-items: flex-start; }
   .crop-viewport { width: min(260px, 78vw); }
   .crop-actions .btn, .crop-actions label.btn { flex: 1; }
+}
+
+/* ---------- 图标 / 版本角标 / 公告 / 管理面板 / 壁纸 ---------- */
+.icon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.icon-sun { display: none; }
+html[data-theme="dark"] .icon-sun { display: block; }
+html[data-theme="dark"] .icon-moon { display: none; }
+.icon-btn.active { background: var(--blue-tint); color: var(--blue); }
+
+.version-badge {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 60;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink3);
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--line);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.version-badge:hover { color: var(--blue); border-color: var(--blue); }
+html[data-theme="dark"] .version-badge { background: rgba(30, 33, 40, 0.8); }
+
+.announcement {
+  max-width: 1024px;
+  margin: 16px auto 0;
+  padding: 11px 16px;
+  border-radius: 12px;
+  background: var(--blue-tint);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.admin-pane { margin-top: 16px; }
+.admin-user-list { display: flex; flex-direction: column; gap: 10px; }
+.admin-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.03);
+}
+html[data-theme="dark"] .admin-user { background: rgba(255, 255, 255, 0.05); }
+.admin-user .avatar { width: 34px; height: 34px; font-size: 14px; }
+.admin-user-name { font-weight: 600; color: var(--ink); }
+.admin-user-meta { font-size: 12px; color: var(--ink3); margin-left: auto; }
+.admin-user .admin-tag {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--blue-tint);
+  color: var(--blue);
+  margin-left: 6px;
+}
+
+.wallpaper-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.wallpaper-swatch {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.wallpaper-swatch:hover { transform: scale(1.1); }
+.wallpaper-swatch.active { box-shadow: 0 0 0 2px var(--card-solid), 0 0 0 4px var(--blue); }
+.wallpaper-swatch[data-wall="none"] {
+  background:
+    linear-gradient(135deg, transparent 44%, rgba(220, 60, 60, 0.85) 45%, rgba(220, 60, 60, 0.85) 55%, transparent 56%),
+    #f5f5f7;
+}
+.wallpaper-swatch.grad-sunset { background: linear-gradient(135deg, #ff9a56, #ff5e7e 60%, #b04bd9); }
+.wallpaper-swatch.grad-ocean { background: linear-gradient(135deg, #36c2ff, #3b7cff 70%, #2b3aa8); }
+.wallpaper-swatch.grad-mint { background: linear-gradient(135deg, #a8ffcb, #34d399 60%, #0ea5a5); }
+.wallpaper-swatch.grad-night { background: linear-gradient(135deg, #2b2f5e, #1b1f3a 55%, #0d0f22); }
+
+body.has-wallpaper {
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
 }

@@ -47,7 +47,17 @@ const STORE_ID = "rhein-terminal";
 let pgPool = null;
 let writeChain = Promise.resolve();
 
-const emptyDb = () => ({ users: [], sheets: [], articles: [], sessions: [], invites: [], comments: [] });
+const DEFAULT_SETTINGS = {
+  siteName: "RHEIN TERMINAL · 模块工具台",
+  heroTitle: "让每一次随机，\n都有迹可循。",
+  heroSub: "简洁的模块化工具台。清单随账号同步，文章随心情公开。\n一切都安静地发生，像苹果那样。",
+  footerText: "清单与文章随账号存储 · 未登录时文章全部私密",
+  announcement: "",
+  version: "2.3.0",
+  updates: "修复已知问题，新增管理员模式、个性化壁纸、界面文字编辑。"
+};
+
+const emptyDb = () => ({ users: [], sheets: [], articles: [], sessions: [], invites: [], comments: [], settings: { ...DEFAULT_SETTINGS } });
 
 function normalizeDb(raw) {
   return {
@@ -56,7 +66,8 @@ function normalizeDb(raw) {
     articles: Array.isArray(raw.articles) ? raw.articles : [],
     sessions: Array.isArray(raw.sessions) ? raw.sessions : [],
     invites: Array.isArray(raw.invites) ? raw.invites : [],
-    comments: Array.isArray(raw.comments) ? raw.comments : []
+    comments: Array.isArray(raw.comments) ? raw.comments : [],
+    settings: { ...DEFAULT_SETTINGS, ...(raw.settings || {}) }
   };
 }
 
@@ -347,10 +358,10 @@ routes["POST api/logout"] = (req, res) => {
 routes["GET api/me"] = (req, res) => {
   const a = requireAuth(req, res);
   if (!a) return;
-  json(res, 200, { id: a.user.id, username: a.user.username, avatar: a.user.avatar || null });
+  json(res, 200, { id: a.user.id, username: a.user.username, avatar: a.user.avatar || null, isAdmin: Boolean(a.user.isAdmin) });
 };
 
-/* 自定义头像：emoji（≤16 字符）或 data:image/*（≤120KB base64）；空值表示恢复默认 */
+/* 自定义头像：色块 color:#rrggbb / data:image/*（≤120KB）/ 旧版 emoji；空值恢复默认 */
 routes["PUT api/me/avatar"] = async (req, res) => {
   const a = requireAuth(req, res);
   if (!a) return;
@@ -361,12 +372,10 @@ routes["PUT api/me/avatar"] = async (req, res) => {
   }
   if (typeof avatar === "string" && avatar.trim()) {
     const v = avatar.trim();
-    const isImage = v.startsWith("data:image/");
-    if (isImage) {
-      if (!/^data:image\/(png|jpeg|webp|gif);base64,/i.test(v)) {
-        return json(res, 400, { error: "仅支持 PNG / JPEG / WebP / GIF 图片" });
-      }
+    if (/^data:image\/(png|jpeg|webp|gif);base64,/i.test(v)) {
       if (v.length > 120000) return json(res, 400, { error: "头像图片过大（请小于 90KB）" });
+    } else if (/^color:#[0-9a-f]{6}$/i.test(v)) {
+      /* 色块头像：合法 */
     } else if (v.length > 16) {
       return json(res, 400, { error: "头像字符过长" });
     }
@@ -376,6 +385,63 @@ routes["PUT api/me/avatar"] = async (req, res) => {
   }
   saveDb();
   json(res, 200, { avatar: a.user.avatar });
+};
+
+/* —— 管理员 —— */
+function requireAdmin(req, res) {
+  const a = requireAuth(req, res);
+  if (!a) return null;
+  if (!a.user.isAdmin) {
+    json(res, 403, { error: "需要管理员权限" });
+    return null;
+  }
+  return a;
+}
+
+routes["GET api/admin/users"] = (req, res) => {
+  const a = requireAdmin(req, res);
+  if (!a) return;
+  const users = db.users.map((u) => ({
+    username: u.username,
+    avatar: u.avatar || null,
+    isAdmin: Boolean(u.isAdmin),
+    createdAt: u.createdAt
+  }));
+  json(res, 200, { users });
+};
+
+routes["GET api/admin/settings"] = (req, res) => {
+  const a = requireAdmin(req, res);
+  if (!a) return;
+  json(res, 200, { settings: db.settings });
+};
+
+routes["PUT api/admin/settings"] = async (req, res) => {
+  const a = requireAdmin(req, res);
+  if (!a) return;
+  const body = await readBody(req);
+  const fields = ["siteName", "heroTitle", "heroSub", "footerText", "announcement", "version", "updates"];
+  for (const k of fields) {
+    if (typeof body[k] === "string") {
+      const max = (k === "heroTitle" || k === "heroSub" || k === "updates" || k === "announcement") ? 2000 : 200;
+      db.settings[k] = body[k].slice(0, max);
+    }
+  }
+  saveDb();
+  json(res, 200, { settings: db.settings });
+};
+
+/* 公开站点设置（首页渲染用，不含敏感信息） */
+routes["GET api/settings"] = (req, res) => {
+  json(res, 200, {
+    siteName: db.settings.siteName,
+    heroTitle: db.settings.heroTitle,
+    heroSub: db.settings.heroSub,
+    footerText: db.settings.footerText,
+    announcement: db.settings.announcement,
+    version: db.settings.version,
+    updates: db.settings.updates
+  });
 };
 
 /* —— 云端清单（sheet） —— */
@@ -640,6 +706,19 @@ const cliArgs = process.argv.slice(2);
     }
     const unused = db.invites.filter((i) => !i.usedBy).length;
     console.log("剩余可用邀请码：" + unused + " 个");
+    process.exit(0);
+  }
+
+  if (cliArgs[0] === "--make-admin" && cliArgs[1]) {
+    const name = cliArgs[1];
+    const u = db.users.find((x) => x.username === name);
+    if (!u) {
+      console.error("未找到用户：" + name);
+      process.exit(1);
+    }
+    u.isAdmin = true;
+    await saveDb();
+    console.log("已将 " + name + " 设为管理员。");
     process.exit(0);
   }
 
