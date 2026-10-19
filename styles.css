@@ -1682,3 +1682,97 @@ body.has-wallpaper {
   background-position: center;
   background-attachment: fixed;
 }
+
+/* ---------- 模块布局：大小 / 位置 / 隐藏 ---------- */
+.card { position: relative; }
+.card.shape-square { grid-column: span 4; aspect-ratio: 1; }
+.card.shape-wide { grid-column: span 8; aspect-ratio: auto; }
+
+.layout-toggle {
+  margin-top: 14px;
+  padding: 7px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--ink2);
+  font-family: var(--sans);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.layout-toggle:hover { color: var(--blue); border-color: var(--blue); }
+.layout-toggle.active {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff;
+  font-weight: 600;
+}
+.layout-hint {
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--ink3);
+}
+
+.grid.editing .card {
+  outline: 2px dashed var(--line);
+  outline-offset: 2px;
+}
+.grid.editing .card.is-editing { cursor: grab; }
+.grid.editing .card.is-editing:active { cursor: grabbing; }
+.grid.editing .card.dragging { opacity: 0.45; }
+.grid.editing .card.drop-target {
+  outline: 2px dashed var(--blue);
+  outline-offset: 2px;
+}
+.card.is-hidden-card { opacity: 0.45; }
+.card.is-hidden-card::after {
+  content: "已隐藏";
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  font-size: 11px;
+  color: var(--ink3);
+  background: rgba(255, 255, 255, 0.7);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.card-ctrl {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid var(--line);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  z-index: 3;
+}
+.card-ctrl button {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink2);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.card-ctrl button:hover { background: var(--blue-tint); color: var(--blue); }
+.card-ctrl .icon { width: 14px; height: 14px; }
+
+/* 布局的响应式：窄屏不强制正方形，避免过高 */
+@media (max-width: 860px) {
+  .card.shape-square { grid-column: span 6; aspect-ratio: auto; }
+  .card.shape-wide { grid-column: span 12; }
+}
+@media (max-width: 600px) {
+  .card.shape-square, .card.shape-wide { grid-column: span 12; aspect-ratio: auto; }
+}

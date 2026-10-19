@@ -1822,12 +1822,194 @@ async function submitAuth() {
   }
 }
 
+/* ============================================================
+   模块布局：大小（方形 / 长方形）· 位置 · 隐藏
+   ============================================================ */
+const LAYOUT_KEY = "rhine.layout";
+let layoutEditing = false;
+let moduleLayout = [];
+
+const CTRL_ICONS = {
+  size: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/></svg>',
+  hide: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 5.1A9.8 9.8 0 0 1 12 5c5 0 9 4.5 9 7 0 .9-.5 2-1.4 3.1M6.6 6.6C4 8.2 3 10.3 3 12c0 2.5 4 7 9 7 1 0 1.9-.2 2.7-.5"/></svg>',
+  left: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>',
+  right: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>'
+};
+
+function getModuleCards() {
+  return $$("#modules [data-module]");
+}
+function defaultModuleLayout() {
+  return getModuleCards().map((card) => ({
+    id: card.dataset.module,
+    shape: card.classList.contains("feature") ? "wide" : "square",
+    hidden: false
+  }));
+}
+function loadModuleLayout() {
+  const defs = defaultModuleLayout();
+  const saved = store.get(LAYOUT_KEY, null);
+  if (!Array.isArray(saved)) return defs;
+  const out = [];
+  saved.forEach((x) => {
+    if (x && x.id && defs.some((d) => d.id === x.id) && !out.some((y) => y.id === x.id)) {
+      out.push({
+        id: x.id,
+        shape: x.shape === "wide" ? "wide" : "square",
+        hidden: Boolean(x.hidden)
+      });
+    }
+  });
+  defs.forEach((d) => {
+    if (!out.some((x) => x.id === d.id)) out.push(d);
+  });
+  return out;
+}
+function saveModuleLayout() {
+  store.set(LAYOUT_KEY, moduleLayout);
+}
+function applyModuleLayout() {
+  const grid = $("#modules .grid");
+  if (!grid) return;
+  const cards = getModuleCards();
+  moduleLayout.forEach((entry) => {
+    const card = cards.find((c) => c.dataset.module === entry.id);
+    if (!card) return;
+    card.classList.toggle("shape-wide", entry.shape === "wide");
+    card.classList.toggle("shape-square", entry.shape !== "wide");
+    card.classList.toggle("is-hidden-card", entry.hidden);
+    card.hidden = entry.hidden && !layoutEditing;
+    grid.appendChild(card);
+  });
+}
+function setLayoutEditing(on) {
+  layoutEditing = on;
+  const grid = $("#modules .grid");
+  const btn = $("#layoutToggle");
+  const hint = $("#layoutHint");
+  if (grid) grid.classList.toggle("editing", on);
+  if (btn) {
+    btn.textContent = on ? "完成调整" : "调整布局";
+    btn.classList.toggle("active", on);
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+  }
+  if (hint) hint.hidden = !on;
+  getModuleCards().forEach((card) => {
+    card.draggable = on;
+    card.classList.toggle("is-editing", on);
+    let ctrl = card.querySelector(".card-ctrl");
+    if (on && !ctrl) {
+      ctrl = document.createElement("div");
+      ctrl.className = "card-ctrl";
+      ctrl.innerHTML =
+        '<button type="button" data-act="size" title="切换方形 / 长方形" aria-label="切换形状">' + CTRL_ICONS.size + "</button>" +
+        '<button type="button" data-act="hide" title="隐藏 / 显示" aria-label="隐藏模块">' + CTRL_ICONS.hide + "</button>" +
+        '<button type="button" data-act="left" title="向左移动" aria-label="向左移动">' + CTRL_ICONS.left + "</button>" +
+        '<button type="button" data-act="right" title="向右移动" aria-label="向右移动">' + CTRL_ICONS.right + "</button>";
+      card.appendChild(ctrl);
+    }
+    if (!on && ctrl) ctrl.remove();
+  });
+  applyModuleLayout();
+}
+function moveModule(id, dir) {
+  const i = moduleLayout.findIndex((x) => x.id === id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= moduleLayout.length) return;
+  const [entry] = moduleLayout.splice(i, 1);
+  moduleLayout.splice(j, 0, entry);
+  applyModuleLayout();
+  saveModuleLayout();
+}
+function moveModuleBefore(id, targetId) {
+  const i = moduleLayout.findIndex((x) => x.id === id);
+  if (i < 0) return;
+  const [entry] = moduleLayout.splice(i, 1);
+  let t = moduleLayout.findIndex((x) => x.id === targetId);
+  if (t < 0) t = moduleLayout.length;
+  moduleLayout.splice(t, 0, entry);
+  applyModuleLayout();
+  saveModuleLayout();
+}
+function initModuleLayout() {
+  moduleLayout = loadModuleLayout();
+  applyModuleLayout();
+  const toggle = $("#layoutToggle");
+  if (toggle) toggle.addEventListener("click", () => setLayoutEditing(!layoutEditing));
+
+  const grid = $("#modules .grid");
+  if (!grid) return;
+  grid.addEventListener("click", (e) => {
+    if (!layoutEditing) return;
+    const ctrlBtn = e.target.closest("[data-act]");
+    if (!ctrlBtn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const card = ctrlBtn.closest("[data-module]");
+    const id = card && card.dataset.module;
+    const entry = moduleLayout.find((x) => x.id === id);
+    if (!entry) return;
+    const act = ctrlBtn.dataset.act;
+    if (act === "size") {
+      entry.shape = entry.shape === "wide" ? "square" : "wide";
+      applyModuleLayout();
+      saveModuleLayout();
+    } else if (act === "hide") {
+      entry.hidden = !entry.hidden;
+      applyModuleLayout();
+      saveModuleLayout();
+    } else if (act === "left") {
+      moveModule(id, -1);
+    } else if (act === "right") {
+      moveModule(id, 1);
+    }
+  });
+
+  /* 拖拽排序（桌面）；移动端用左右箭头 */
+  let dragId = null;
+  getModuleCards().forEach((card) => {
+    card.addEventListener("dragstart", (e) => {
+      if (!layoutEditing) {
+        e.preventDefault();
+        return;
+      }
+      dragId = card.dataset.module;
+      card.classList.add("dragging");
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = "move";
+        try { e.dataTransfer.setData("text/plain", dragId); } catch (err) { /* 忽略 */ }
+      }
+    });
+    card.addEventListener("dragend", () => {
+      card.classList.remove("dragging");
+      dragId = null;
+      getModuleCards().forEach((c) => c.classList.remove("drop-target"));
+    });
+    card.addEventListener("dragover", (e) => {
+      if (!layoutEditing || !dragId || dragId === card.dataset.module) return;
+      e.preventDefault();
+      card.classList.add("drop-target");
+    });
+    card.addEventListener("dragleave", () => card.classList.remove("drop-target"));
+    card.addEventListener("drop", (e) => {
+      if (!layoutEditing || !dragId || dragId === card.dataset.module) return;
+      e.preventDefault();
+      card.classList.remove("drop-target");
+      moveModuleBefore(dragId, card.dataset.module);
+    });
+  });
+}
+
 /* ---------- 事件绑定 ---------- */
 document.addEventListener("DOMContentLoaded", () => {
+  initModuleLayout();
   /* 模块卡片与通用按钮 */
   $$("[data-module]").forEach((card) => {
     const name = card.dataset.module;
-    const open = () => openModal(name);
+    const open = () => {
+      if (layoutEditing) return;
+      openModal(name);
+    };
     card.addEventListener("click", open);
     card.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
@@ -1837,7 +2019,10 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
   $$("[data-open]").forEach((b) =>
-    b.addEventListener("click", () => openModal(b.dataset.open))
+    b.addEventListener("click", () => {
+      if (layoutEditing) return;
+      openModal(b.dataset.open);
+    })
   );
   $$("[data-open-auth]").forEach((b) =>
     b.addEventListener("click", (e) => {
