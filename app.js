@@ -567,18 +567,72 @@ function setCropMode(on) {
   actions.hidden = on;
 }
 
-function openCropWithFile(file) {
-  if (!file || !file.type.startsWith("image/")) {
-    toast("请选择图片文件", "err");
-    return;
+/* 读取 JPEG EXIF Orientation（1–8，无则返回 1） */
+function readJpegOrientation(arrayBuffer) {
+  try {
+    const view = new DataView(arrayBuffer);
+    if (arrayBuffer.byteLength < 4 || view.getUint16(0, false) !== 0xffd8) return 1;
+    let off = 2;
+    while (off + 4 <= view.byteLength) {
+      const marker = view.getUint16(off, false);
+      if ((marker & 0xff00) !== 0xff00) break;
+      const code = marker & 0xff;
+      if (code === 0xd8) { off += 2; continue; }
+      if (code === 0xd9 || code === 0xda) break;
+      const len = view.getUint16(off + 2, false);
+      if (code === 0xe1 && len >= 8 && view.getUint32(off + 4, false) === 0x45786966) {
+        const tiff = off + 10;
+        const little = view.getUint16(tiff, false) === 0x4949;
+        const read16 = (p) => view.getUint16(p, little);
+        const read32 = (p) => view.getUint32(p, little);
+        if (read16(tiff) !== 0x2a) return 1;
+        const ifd0 = tiff + read32(tiff + 4);
+        const n = read16(ifd0);
+        for (let i = 0; i < n; i++) {
+          const e = ifd0 + 2 + i * 12;
+          if (e + 12 > view.byteLength) break;
+          if (read16(e) === 0x0112) return read16(e + 8) || 1;
+        }
+        return 1;
+      }
+      off += 2 + len;
+    }
+  } catch (e) { /* 忽略 */ }
+  return 1;
+}
+
+/* 按 EXIF 方向把图片归一化（画到一张方向正确的 canvas 上） */
+function normalizeImageOrientation(img, o) {
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  const swap = o >= 5 && o <= 8;
+  const cw = swap ? h : w;
+  const ch = swap ? w : h;
+  const canvas = document.createElement("canvas");
+  canvas.width = cw;
+  canvas.height = ch;
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    switch (o) {
+      case 2: ctx.transform(-1, 0, 0, 1, w, 0); break;
+      case 3: ctx.transform(-1, 0, 0, -1, w, h); break;
+      case 4: ctx.transform(1, 0, 0, -1, 0, h); break;
+      case 5: ctx.transform(0, 1, 1, 0, 0, 0); break;
+      case 6: ctx.transform(0, 1, -1, 0, h, 0); break;
+      case 7: ctx.transform(0, -1, -1, 0, h, w); break;
+      case 8: ctx.transform(0, -1, 1, 0, 0, w); break;
+    }
+    ctx.drawImage(img, 0, 0);
   }
-  if (crop.url) URL.revokeObjectURL(crop.url);
-  crop.url = URL.createObjectURL(file);
+  return canvas;
+}
+
+function loadImageForCrop(src, orientation) {
   const img = new Image();
   img.onload = () => {
-    crop.img = img;
-    crop.W = img.naturalWidth || img.width;
-    crop.H = img.naturalHeight || img.height;
+    crop.img = orientation === 1 ? img : normalizeImageOrientation(img, orientation);
+    crop.W = crop.img.width;
+    crop.H = crop.img.height;
     /* 先显示取景区域，再测量宽度（隐藏元素宽度为 0） */
     setCropMode(true);
     const viewport = $("#cropViewport");
@@ -588,12 +642,27 @@ function openCropWithFile(file) {
     crop.tx = (crop.view - crop.W * crop.scale0 * crop.zoom) / 2;
     crop.ty = (crop.view - crop.H * crop.scale0 * crop.zoom) / 2;
     const imgEl = $("#cropImage");
-    imgEl.src = crop.url;
+    imgEl.src = (typeof crop.img.toDataURL === "function")
+      ? crop.img.toDataURL("image/jpeg", 0.95)
+      : crop.url;
     $("#cropZoom").value = "1.2";
     layoutCrop();
   };
   img.onerror = () => toast("图片读取失败，请换一张试试", "err");
-  img.src = crop.url;
+  img.src = src;
+}
+
+function openCropWithFile(file) {
+  if (!file || !file.type.startsWith("image/")) {
+    toast("请选择图片文件", "err");
+    return;
+  }
+  if (crop.url) URL.revokeObjectURL(crop.url);
+  crop.url = URL.createObjectURL(file);
+  const reader = new FileReader();
+  reader.onload = () => loadImageForCrop(crop.url, readJpegOrientation(reader.result));
+  reader.onerror = () => loadImageForCrop(crop.url, 1);
+  reader.readAsArrayBuffer(file);
 }
 
 function getCropRect() {
