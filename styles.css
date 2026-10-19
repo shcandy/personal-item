@@ -2203,3 +2203,16 @@ html[data-theme="dark"] .brand-btn { background: rgba(255, 255, 255, 0.08); }
   margin-left: 6px;
   font-family: var(--mono);
 }
+
+/* ---------- 管理员在线状态 / 壁纸提示 ---------- */
+.admin-status {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.admin-status.online { background: rgba(52, 199, 89, 0.14); color: #1e8e3e; }
+.admin-status.offline { background: rgba(0, 0, 0, 0.06); color: var(--ink3); }
+html[data-theme="dark"] .admin-status.online { color: #4cd07a; }
+html[data-theme="dark"] .admin-status.offline { background: rgba(255, 255, 255, 0.08); }
+.wallpaper-note { font-size: 11px; color: var(--ink3); opacity: 0.8; }

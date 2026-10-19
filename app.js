@@ -564,10 +564,18 @@ function renderAdminUsers(users) {
     }
     const meta = document.createElement("span");
     meta.className = "admin-user-meta";
-    meta.textContent = u.createdAt ? new Date(u.createdAt).toLocaleDateString("zh-CN") : "";
+    const lastVisit = u.lastSeen
+      ? "最近访问 " + timeAgo(u.lastSeen)
+      : "尚未访问";
+    meta.textContent = (u.createdAt ? "注册 " + new Date(u.createdAt).toLocaleDateString("zh-CN") + " · " : "") + lastVisit;
+    meta.title = u.lastSeen ? "最近访问 " + new Date(u.lastSeen).toLocaleString("zh-CN") : "尚未访问";
+    const status = document.createElement("span");
+    status.className = "admin-status" + (u.online ? " online" : " offline");
+    status.textContent = u.online ? "在线" : "离线";
     row.appendChild(av);
     row.appendChild(name);
     row.appendChild(meta);
+    row.appendChild(status);
     list.appendChild(row);
   });
 }
@@ -2797,11 +2805,13 @@ function setLayoutEditing(on) {
   const hint = $("#layoutHint");
   if (grid) grid.classList.toggle("editing", on);
   if (btn) {
-    btn.textContent = on ? "完成调整" : "调整布局";
     btn.classList.toggle("active", on);
     btn.setAttribute("aria-pressed", on ? "true" : "false");
   }
+  const layoutLabel = $("#layoutLabel");
+  if (layoutLabel) layoutLabel.textContent = on ? "完成" : "布局";
   if (hint) hint.hidden = !on;
+  if (on) toast("布局模式：拖动卡片排序，或用卡片上的按钮调整大小 / 隐藏", "");
   getModuleCards().forEach((card) => {
     card.draggable = on;
     card.classList.toggle("is-editing", on);
@@ -3047,11 +3057,7 @@ document.addEventListener("DOMContentLoaded", () => {
     store.set(WALLPAPER_KEY, sw.dataset.wall);
     applyWallpaper(sw.dataset.wall);
   });
-  $("#wallpaperFile").addEventListener("change", (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (file) readWallpaperFile(file);
-    e.target.value = "";
-  });
+  /* 上传壁纸已暂时禁用 */
 
   /* 管理员 */
   $("#adminBtn").addEventListener("click", toggleAdminMode);

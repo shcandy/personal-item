@@ -40,6 +40,7 @@ const DATA_DIR = process.env.RHINE_DATA || path.join(ROOT, "data");
 const DB_PATH = path.join(DATA_DIR, "db.json");
 const PORT = Number(process.env.PORT || 8000);
 const SESSION_TTL = 30 * 24 * 3600 * 1000; // 30 天
+const ONLINE_WINDOW = 5 * 60 * 1000; // 5 分钟内视为在线
 
 /* ---------- 版本信息（只读，来自仓库 version.json） ---------- */
 function loadVersionInfo() {
@@ -266,6 +267,7 @@ function getSession(req) {
     return null;
   }
   const u = db.users.find((x) => x.id === s.userId);
+  if (u) u.lastSeen = Date.now(); // 在线状态：记录最近一次访问
   return u ? { user: u, session: s } : null;
 }
 
@@ -437,12 +439,18 @@ function requireAdmin(req, res) {
 routes["GET api/admin/users"] = (req, res) => {
   const a = requireAdmin(req, res);
   if (!a) return;
-  const users = db.users.map((u) => ({
-    username: u.username,
-    avatar: u.avatar || null,
-    isAdmin: Boolean(u.isAdmin),
-    createdAt: u.createdAt
-  }));
+  const now = Date.now();
+  const users = db.users.map((u) => {
+    const lastSeen = Number(u.lastSeen) || 0;
+    return {
+      username: u.username,
+      avatar: u.avatar || null,
+      isAdmin: Boolean(u.isAdmin),
+      createdAt: u.createdAt,
+      lastSeen,
+      online: lastSeen > 0 && now - lastSeen < ONLINE_WINDOW
+    };
+  });
   json(res, 200, { users });
 };
 

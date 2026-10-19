@@ -34,6 +34,10 @@
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M4 5.5v16"/></svg>
         <span class="rail-label">广场</span>
       </button>
+      <button class="rail-item" type="button" id="layoutToggle" aria-pressed="false" title="调整模块布局">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+        <span class="rail-label" id="layoutLabel">布局</span>
+      </button>
     </div>
     <div class="rail-group rail-controls">
       <button class="rail-item server-chip" type="button" id="serverChip" title="服务状态">
@@ -107,7 +111,6 @@
       <div class="section-head">
         <h2>模块</h2>
         <p>每个区块是一个独立功能，点击即可使用。</p>
-        <button class="layout-toggle" id="layoutToggle" aria-pressed="false">调整布局</button>
         <p class="layout-hint" id="layoutHint" hidden>拖动卡片排序 · ▭ 切换方形 / 长方形 · ✕ 隐藏模块</p>
       </div>
 
@@ -829,8 +832,7 @@
             <button class="wallpaper-swatch grad-ocean" data-wall="grad-ocean" aria-label="海洋" title="海洋"></button>
             <button class="wallpaper-swatch grad-mint" data-wall="grad-mint" aria-label="薄荷" title="薄荷"></button>
             <button class="wallpaper-swatch grad-night" data-wall="grad-night" aria-label="夜空" title="夜空"></button>
-            <label class="btn ghost small" for="wallpaperFile">上传壁纸</label>
-            <input type="file" id="wallpaperFile" accept="image/*" hidden />
+            <span class="wallpaper-note">上传壁纸暂不可用</span>
           </div>
         </div>
       </div>
