@@ -729,17 +729,25 @@ const MIME = {
   ".txt": "text/plain; charset=utf-8"
 };
 
+/* 静态资源白名单：只暴露前端需要的文件，其余一律 403 */
+const STATIC_FILES = new Set(["/index.html", "/styles.css", "/app.js", "/version.json"]);
+
 function serveStatic(req, res, pathname) {
-  let rel = decodeURIComponent(pathname === "/" ? "/index.html" : pathname);
-  const file = path.normalize(path.join(ROOT, rel));
-  if (!file.startsWith(ROOT)) {
-    res.writeHead(403);
+  let rel;
+  try {
+    rel = decodeURIComponent(pathname === "/" ? "/index.html" : pathname);
+  } catch (e) {
+    res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+    return res.end("Bad Request");
+  }
+  const norm = path.posix.normalize(rel);
+  if (!STATIC_FILES.has(norm)) {
+    res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
     return res.end("Forbidden");
   }
-  /* 安全：禁止暴露数据目录与服务器/测试源码 */
-  const base = path.basename(file);
-  if (rel.split("/").includes("data") || base === "server.js" || base.endsWith(".test.mjs")) {
-    res.writeHead(403);
+  const file = path.join(ROOT, norm);
+  if (!file.startsWith(ROOT + path.sep)) {
+    res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
     return res.end("Forbidden");
   }
   fs.readFile(file, (err, data) => {

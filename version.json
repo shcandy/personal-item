@@ -1,7 +1,18 @@
 {
-  "version": "3.4.0",
+  "version": "3.4.1",
   "build": "2026-10-19",
   "changelog": [
+    {
+      "version": "3.4.1",
+      "date": "2026-10-19",
+      "title": "静态资源安全加固",
+      "items": [
+        "静态服务改为白名单：只暴露 index.html、styles.css、app.js、version.json",
+        "修复旧版本可能被直接下载 package.json、tools/ 目录、.gitignore 等文件的问题",
+        "新增回归测试：.env.local、tools 目录、package.json 一律返回 403",
+        "配合 .gitignore 屏蔽 tools/user_data、tools/debug、tools/output 与 Python 缓存"
+      ]
+    },
     {
       "version": "3.4.0",
       "date": "2026-10-19",
