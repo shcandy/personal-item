@@ -385,9 +385,18 @@
           <div class="pool-toolbar">
             <span class="pool-count mono" id="waimaiCount">0 项</span>
             <div class="toolbar-btns">
-              <span class="mono waimai-tip">来自淘宝闪购等外卖平台</span>
+              <button class="mini-btn" id="waimaiSaveBtn" type="button">存为清单</button>
+              <button class="mini-btn danger" id="waimaiDeleteBtn" type="button" hidden>删除数据</button>
             </div>
           </div>
+          <div class="sheet-form" id="waimaiSaveBox" hidden>
+            <input class="text-input" id="waimaiSheetName" placeholder="清单名称，例如：外卖候选" maxlength="40" />
+            <div class="sheet-form-actions">
+              <button class="btn primary small" id="waimaiSaveConfirm">保存到云端</button>
+              <button class="btn ghost small" id="waimaiSaveCancel">取消</button>
+            </div>
+          </div>
+          <p class="waimai-tip">来自淘宝闪购等外卖平台 · 生成清单后可在「我的清单」里继续使用</p>
         </section>
 
         <!-- 抽取选项 -->

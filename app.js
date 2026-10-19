@@ -359,6 +359,9 @@ function renderUserUI() {
   if (adminBtn) adminBtn.hidden = !(logged && auth.isAdmin);
   if (panelBtn) panelBtn.hidden = !(logged && auth.isAdmin && adminMode);
   if (adminBtn) adminBtn.classList.toggle("active", adminMode);
+  /* 外卖数据删除：仅管理员可见 */
+  const waimaiDel = $("#waimaiDeleteBtn");
+  if (waimaiDel) waimaiDel.hidden = !(logged && auth.isAdmin);
 }
 
 /* 服务端刷新头像与管理员身份（登录后调用） */
@@ -3050,6 +3053,45 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (e) {
       toast(e.message, "err");
     }
+  });
+
+  /* 外卖商品：存为清单 / 删除数据 */
+  $("#waimaiSaveBtn").addEventListener("click", () => {
+    if (!isAuthed()) { openAuthFrom("random"); return; }
+    if (!waimaiItems.length) { toast("外卖商品为空，先点「同步」", "err"); return; }
+    $("#waimaiSheetName").value = "外卖候选";
+    $("#waimaiSaveBox").hidden = false;
+    $("#waimaiSheetName").focus();
+  });
+  $("#waimaiSaveCancel").addEventListener("click", () => { $("#waimaiSaveBox").hidden = true; });
+  $("#waimaiSaveConfirm").addEventListener("click", async () => {
+    const name = $("#waimaiSheetName").value.trim();
+    if (!name) { toast("请填写清单名称", "err"); return; }
+    try {
+      await api("/api/sheets", { method: "POST", body: { name, items: waimaiItems.slice() } });
+      $("#waimaiSaveBox").hidden = true;
+      toast(`已生成云端清单「${name}」`, "ok");
+      await loadSheets();
+      const sheetsTab = document.querySelector('.tab[data-tab="sheets"]');
+      if (sheetsTab) sheetsTab.click();
+    } catch (e) {
+      toast(e.message, "err");
+    }
+  });
+  $("#waimaiDeleteBtn").addEventListener("click", (e) => {
+    if (!isAuthed() || !auth.isAdmin) { toast("需要管理员权限", "err"); return; }
+    armButton(e.currentTarget, "再点一次确认删除", async () => {
+      try {
+        await api("/api/waimai", { method: "DELETE" });
+        waimaiItems = [];
+        waimaiMeta = { source: "", updatedAt: 0 };
+        renderWaimaiPool();
+        refreshPoolUI();
+        toast("已删除爬取的外卖数据", "ok");
+      } catch (err) {
+        toast(err.message, "err");
+      }
+    });
   });
 
   /* 抽取选项 */

@@ -12,3 +12,10 @@ _scratch*/
 .env
 .env.local
 
+# 爬虫：浏览器登录态 / 抓包调试 / 导出结果（绝不能提交）
+tools/user_data/
+tools/debug/
+tools/output/
+__pycache__/
+*.pyc
+
